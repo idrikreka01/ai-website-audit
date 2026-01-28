@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment files
+.env
+.env.*
+
+# Artifacts / storage
+artifacts/
+storage/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+*~
+
+.cursorrules
+docs/CODEX_RULES
