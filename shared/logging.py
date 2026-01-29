@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import structlog
@@ -41,25 +42,53 @@ def _build_shared_processors() -> list[structlog.types.Processor]:
     ]
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+def configure_logging(
+    level: int = logging.INFO,
+    log_file: Optional[str] = None,
+    log_stdout: bool = True,
+) -> None:
     """
     Configure structlog and the standard logging module.
 
     This should be called once at process startup by each service
     (API and worker). It is safe to call multiple times, but later
     calls will effectively be no-ops once structlog is configured.
+
+    - When log_stdout is True (default), a StreamHandler(sys.stdout) is added.
+    - When log_file is set, a FileHandler is added (parent dir created if needed).
+    - At least one handler is always added: if both log_stdout=False and log_file
+      is unset, stdout is used as fallback so the process never has zero handlers.
     """
 
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        stream=sys.stdout,
-    )
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    if log_stdout:
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        stdout_handler.setLevel(level)
+        stdout_handler.setFormatter(logging.Formatter("%(message)s"))
+        root.addHandler(stdout_handler)
+
+    if log_file:
+        path = Path(log_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        root.addHandler(file_handler)
+
+    if not root.handlers:
+        # Fallback: avoid zero handlers (e.g. LOG_STDOUT=false and LOG_FILE unset)
+        fallback = logging.StreamHandler(sys.stdout)
+        fallback.setLevel(level)
+        fallback.setFormatter(logging.Formatter("%(message)s"))
+        root.addHandler(fallback)
 
     structlog.configure(
         processors=_build_shared_processors(),
         wrapper_class=structlog.make_filtering_bound_logger(level),
-        logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 

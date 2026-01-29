@@ -11,10 +11,9 @@ the environment (or tooling such as python-dotenv in local development).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import Literal, Optional
-
 
 Environment = Literal["local", "dev", "staging", "prod"]
 
@@ -31,6 +30,12 @@ class AppConfig:
 
     environment: Environment
     log_level: str
+
+    # Optional file path for structured JSON logs; when set, logs are written
+    # to file (and stdout if log_stdout).
+    log_file: Optional[str]
+    # When True, logs go to stdout. When False, only file (if LOG_FILE set). Default True.
+    log_stdout: bool
 
     # Infrastructure endpoints (metadata / queues / storage only).
     # These are URIs only; no credentials are stored here.
@@ -56,9 +61,14 @@ class AppConfig:
             # guessing. This can be relaxed or logged differently later.
             raise ValueError(f"Unsupported APP_ENV value: {environment!r}")
 
+        log_stdout_raw = (os.getenv("LOG_STDOUT") or "true").strip().lower()
+        log_stdout = log_stdout_raw in ("true", "1", "yes")
+
         return cls(
             environment=environment,  # type: ignore[arg-type]
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_file=os.getenv("LOG_FILE") or None,
+            log_stdout=log_stdout,
             database_url=os.getenv("DATABASE_URL"),
             redis_url=os.getenv("REDIS_URL"),
             storage_root=os.getenv("STORAGE_ROOT", "./storage"),
@@ -76,4 +86,3 @@ def get_config() -> AppConfig:
     """
 
     return AppConfig.from_env()
-

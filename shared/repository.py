@@ -13,13 +13,13 @@ from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from shared.db import (
-    get_audit_sessions_table,
-    get_audit_pages_table,
     get_artifacts_table,
+    get_audit_pages_table,
+    get_audit_sessions_table,
     get_crawl_logs_table,
 )
 
@@ -66,13 +66,11 @@ class AuditRepository:
             low_confidence=False,
         )
 
-        result = self.session.execute(insert_stmt)
+        self.session.execute(insert_stmt)
         self.session.flush()
 
         # Fetch the created row
-        select_stmt = select(self.sessions_table).where(
-            self.sessions_table.c.id == session_id
-        )
+        select_stmt = select(self.sessions_table).where(self.sessions_table.c.id == session_id)
         row = self.session.execute(select_stmt).one()
         return dict(row._mapping)
 
@@ -82,9 +80,7 @@ class AuditRepository:
 
         Returns the session as a dict, or None if not found.
         """
-        stmt = select(self.sessions_table).where(
-            self.sessions_table.c.id == session_id
-        )
+        stmt = select(self.sessions_table).where(self.sessions_table.c.id == session_id)
         result = self.session.execute(stmt).first()
         if result is None:
             return None
@@ -96,9 +92,7 @@ class AuditRepository:
 
         Returns a list of page dicts.
         """
-        stmt = select(self.pages_table).where(
-            self.pages_table.c.session_id == session_id
-        )
+        stmt = select(self.pages_table).where(self.pages_table.c.session_id == session_id)
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
 
@@ -108,9 +102,7 @@ class AuditRepository:
 
         Returns a list of artifact dicts.
         """
-        stmt = select(self.artifacts_table).where(
-            self.artifacts_table.c.session_id == session_id
-        )
+        stmt = select(self.artifacts_table).where(self.artifacts_table.c.session_id == session_id)
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
 
@@ -172,9 +164,7 @@ class AuditRepository:
         self.session.flush()
 
         # Fetch the created row
-        select_stmt = select(self.pages_table).where(
-            self.pages_table.c.id == page_id
-        )
+        select_stmt = select(self.pages_table).where(self.pages_table.c.id == page_id)
         row = self.session.execute(select_stmt).one()
         return dict(row._mapping)
 
@@ -211,13 +201,17 @@ class AuditRepository:
 
         Returns the created log as a dict.
         """
-        insert_stmt = self.logs_table.insert().values(
-            session_id=session_id,
-            level=level,
-            event_type=event_type,
-            message=message,
-            details=details or {},
-        ).returning(self.logs_table.c.id)
+        insert_stmt = (
+            self.logs_table.insert()
+            .values(
+                session_id=session_id,
+                level=level,
+                event_type=event_type,
+                message=message,
+                details=details or {},
+            )
+            .returning(self.logs_table.c.id)
+        )
 
         result = self.session.execute(insert_stmt).one()
         self.session.flush()
@@ -263,9 +257,7 @@ class AuditRepository:
         self.session.flush()
 
         # Fetch the created row
-        select_stmt = select(self.artifacts_table).where(
-            self.artifacts_table.c.id == artifact_id
-        )
+        select_stmt = select(self.artifacts_table).where(self.artifacts_table.c.id == artifact_id)
         row = self.session.execute(select_stmt).one()
         return dict(row._mapping)
 
@@ -335,16 +327,15 @@ class AuditRepository:
                 (useful when checking for prior sessions excluding the current one)
 
         Returns:
-            True if prior sessions exist, False otherwise (i.e., first_time = not has_prior_sessions)
+            True if prior sessions exist, False otherwise
+            (i.e., first_time = not has_prior_sessions).
         """
         parsed = urlparse(url)
         domain = parsed.netloc.lower() if parsed.netloc else None
 
         if not domain:
             # If we can't extract a domain, fall back to exact URL match
-            stmt = select(self.sessions_table).where(
-                self.sessions_table.c.url == url
-            )
+            stmt = select(self.sessions_table).where(self.sessions_table.c.url == url)
             if exclude_session_id:
                 stmt = stmt.where(self.sessions_table.c.id != exclude_session_id)
             result = self.session.execute(stmt).first()
@@ -354,7 +345,7 @@ class AuditRepository:
         # Since URLs are normalized, we can check:
         # 1. Exact URL match
         # 2. Domain match (URL starts with http://domain or https://domain)
-        
+
         # Build condition: exact URL match OR domain match (http or https)
         stmt = select(self.sessions_table).where(
             or_(
@@ -385,6 +376,26 @@ class AuditRepository:
             self.sessions_table.update()
             .where(self.sessions_table.c.id == session_id)
             .values(low_confidence=low_confidence)
+        )
+        self.session.execute(update_stmt)
+        self.session.flush()
+
+    def update_session_pdp_url(
+        self,
+        session_id: UUID,
+        pdp_url: Optional[str],
+    ) -> None:
+        """
+        Update the pdp_url on an audit session (selected PDP from discovery).
+
+        Args:
+            session_id: The session ID to update
+            pdp_url: The selected PDP URL, or None if not found
+        """
+        update_stmt = (
+            self.sessions_table.update()
+            .where(self.sessions_table.c.id == session_id)
+            .values(pdp_url=pdp_url)
         )
         self.session.execute(update_stmt)
         self.session.flush()

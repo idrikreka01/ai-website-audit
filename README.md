@@ -108,9 +108,9 @@ Editable installs (`pip install -e .`) for the `api` and `worker` services will 
 enabled once their Python package layouts are introduced in a later task.
 
 
-## Manual smoke test (homepage crawl)
+## Manual smoke test (homepage + PDP)
 
-To verify the worker can crawl a homepage:
+To verify the worker can crawl a homepage and PDP on a live e-commerce site:
 
 1. Ensure all services are running:
    - PostgreSQL (with migrations applied)
@@ -118,11 +118,11 @@ To verify the worker can crawl a homepage:
    - API server: `uvicorn api.main:app --reload`
    - Worker: `python -m worker.main`
 
-2. Create an audit session:
+2. Create an audit session (use a real e-commerce URL that has product pages):
    ```bash
    curl -X POST http://localhost:8000/audits \
      -H "Content-Type: application/json" \
-     -d '{"url": "https://example.com", "mode": "standard"}'
+     -d '{"url": "https://example-shop.com", "mode": "standard"}'
    ```
 
 3. Check the session status:
@@ -130,18 +130,21 @@ To verify the worker can crawl a homepage:
    curl http://localhost:8000/audits/{session_id}
    ```
 
-4. Verify artifacts were created:
-   - Check `./artifacts/{session_id}/homepage/desktop/` and `./artifacts/{session_id}/homepage/mobile/`
-   - Should contain: `screenshot.png`, `visible_text.txt`, `features_json.json`
-   - May contain `html_gz.html.gz` if conditional rules triggered
+4. Verify artifacts were created for all 4 pages:
+   - **Homepage:** `./artifacts/{session_id}/homepage/desktop/` and `./artifacts/{session_id}/homepage/mobile/`
+   - **PDP (if discovered):** `./artifacts/{session_id}/pdp/desktop/` and `./artifacts/{session_id}/pdp/mobile/`
+   - Each directory should contain: `screenshot.png`, `visible_text.txt`, `features_json.json`
+   - `html_gz.html.gz` may be present when conditional rules apply (first_time, low_confidence, debug, or failure)
 
-5. Check artifacts in database:
+5. PDP success criteria:
+   - Session status `completed` when all 4 pages (homepage desktop/mobile + PDP desktop/mobile) succeed.
+   - Session status `partial` when at least one viewport failed; `failed` when all fail.
+   - When a PDP was found (`pdp_url` set), expect 4 screenshots total; when no PDP was found, expect 2 (homepage only).
+
+6. Check artifacts in database:
    ```bash
    curl http://localhost:8000/audits/{session_id}/artifacts
    ```
-
-The session status should be `completed` if both desktop and mobile viewports succeeded,
-or `partial`/`failed` if one or both failed.
 
 For now, service dependencies are installed from `api/requirements.txt` and
 `worker/requirements.txt`. The long-term source of truth will remain the

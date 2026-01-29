@@ -8,24 +8,24 @@ between the repository layer and providing a clean interface for the API routes.
 from __future__ import annotations
 
 from typing import Optional
-from uuid import UUID
 from urllib.parse import urlparse, urlunparse
+from uuid import UUID
 
-from api.queue import enqueue_audit_job
+from api.job_queue import enqueue_audit_job
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
-    AuditSessionResponse,
-    AuditPageResponse,
     ArtifactResponse,
+    AuditPageResponse,
+    AuditSessionResponse,
     CreateAuditResponse,
 )
 from shared.logging import get_logger
 
-
 logger = get_logger(__name__)
 
 # Current crawl policy version (hardcoded for MVP; can be made configurable later).
-CRAWL_POLICY_VERSION = "v1.0"
+# v1.1: PDP-not-found with homepage success → session status partial.
+CRAWL_POLICY_VERSION = "v1.1"
 
 
 def normalize_url(url: str) -> str:

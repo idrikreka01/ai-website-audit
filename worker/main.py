@@ -9,10 +9,13 @@ from __future__ import annotations
 import sys
 
 import redis
-from rq import Worker, Queue, Connection
+from dotenv import load_dotenv
+from rq import Connection, Queue, Worker
 
 from shared.config import get_config
 from shared.logging import configure_logging, get_logger
+
+load_dotenv()
 
 
 def main() -> None:
@@ -22,7 +25,11 @@ def main() -> None:
     import logging
 
     log_level = logging.getLevelName(config.log_level.upper())
-    configure_logging(level=log_level)
+    configure_logging(
+        level=log_level,
+        log_file=config.log_file,
+        log_stdout=config.log_stdout,
+    )
 
     logger = get_logger(__name__)
 

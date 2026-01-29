@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 # revision identifiers, used by Alembic.
 revision: str = "0001_initial_schema"
@@ -81,7 +80,9 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
         sa.Column("url", sa.Text(), nullable=False),
         sa.Column("status", audit_session_status_enum, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("final_url", sa.Text(), nullable=True),
         sa.Column("mode", audit_mode_enum, nullable=False),
         sa.Column("retention_policy", retention_policy_enum, nullable=False),
@@ -100,7 +101,9 @@ def upgrade() -> None:
         sa.Column("viewport", viewport_enum, nullable=False),
         sa.Column("status", page_status_enum, nullable=False),
         sa.Column("load_timings", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("low_confidence_reasons", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "low_confidence_reasons", postgresql.JSONB(astext_type=sa.Text()), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["session_id"],
             ["audit_sessions.id"],
@@ -117,7 +120,9 @@ def upgrade() -> None:
         sa.Column("type", artifact_type_enum, nullable=False),
         sa.Column("storage_uri", sa.Text(), nullable=False),
         sa.Column("size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("retention_until", sa.DateTime(timezone=True), nullable=True),
         sa.Column("checksum", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(
@@ -142,7 +147,9 @@ def upgrade() -> None:
         sa.Column("event_type", event_type_enum, nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("details", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("timestamp", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "timestamp", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(
             ["session_id"],
             ["audit_sessions.id"],
@@ -207,4 +214,3 @@ def downgrade() -> None:
         "audit_session_status_enum",
     ]:
         postgresql.ENUM(name=enum_name).drop(bind, checkfirst=True)
-

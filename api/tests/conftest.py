@@ -9,18 +9,19 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Generator
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from dotenv import load_dotenv
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from api.main import create_app
 from api.db import get_db_session
+from api.main import create_app
 
+load_dotenv()
 
 # Use a test database URL (can be overridden via TEST_DATABASE_URL env var)
 TEST_DATABASE_URL = os.getenv(

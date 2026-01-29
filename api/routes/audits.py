@@ -16,22 +16,19 @@ from sqlalchemy.orm import Session
 from api.db import get_db_session
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
+    ArtifactResponse,
+    AuditSessionResponse,
     CreateAuditRequest,
     CreateAuditResponse,
-    AuditSessionResponse,
-    ArtifactResponse,
 )
 from api.services.audit_service import AuditService
 from shared.logging import bind_request_context, get_logger
-
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/audits", tags=["audits"])
 
 
-def get_audit_service(
-    session: Annotated[Session, Depends(get_db_session)]
-) -> AuditService:
+def get_audit_service(session: Annotated[Session, Depends(get_db_session)]) -> AuditService:
     """Dependency to get an AuditService instance."""
     repository = AuditRepository(session)
     return AuditService(repository)

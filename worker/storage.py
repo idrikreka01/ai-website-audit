@@ -10,14 +10,12 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
-import os
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
 from shared.config import get_config
 from shared.logging import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -37,6 +35,7 @@ def build_artifact_path(
 
     Convention: {session_id}/{page_type}/{viewport}/{artifact_type}.{ext}
 
+    Artifacts at the same path are overwritten deterministically (no skip-if-exists).
     Returns a Path object (does not create the file or directory).
     """
     config = get_config()
@@ -51,13 +50,7 @@ def build_artifact_path(
     }
     ext = ext_map[artifact_type]
 
-    path = (
-        artifacts_root
-        / str(session_id)
-        / page_type
-        / viewport
-        / f"{artifact_type}.{ext}"
-    )
+    path = artifacts_root / str(session_id) / page_type / viewport / f"{artifact_type}.{ext}"
 
     return path
 

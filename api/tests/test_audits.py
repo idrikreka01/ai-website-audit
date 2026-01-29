@@ -9,15 +9,11 @@ These tests cover the critical behaviors specified in the acceptance criteria:
 """
 
 from __future__ import annotations
-from unittest.mock import patch, MagicMock
 
+from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
 from fastapi import status
-
-from api.repositories.audit_repository import AuditRepository
-from api.services.audit_service import AuditService
 
 
 def test_create_audit_session(client):
@@ -34,7 +30,7 @@ def test_create_audit_session(client):
     data = response.json()
     assert "id" in data
     assert data["status"] == "queued"
-    assert data["url"] == "https://example.com"
+    assert data["url"] == "https://example.com/"
 
     # Verify the session exists in the database
     session_id = data["id"]
@@ -101,7 +97,7 @@ def test_url_normalization(client):
         },
     )
     # Pydantic HttpUrl validation should reject scheme-less URLs
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     # Test with valid URL that has trailing slash (should be normalized)
     response2 = client.post(
@@ -139,7 +135,7 @@ def test_invalid_url_rejected(client):
         },
     )
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 @patch("api.services.audit_service.enqueue_audit_job")
@@ -165,4 +161,4 @@ def test_create_audit_enqueues_job(mock_enqueue, client):
     call_args = mock_enqueue.call_args
     # First positional arg is the UUID object, second is the normalized URL
     assert str(call_args[0][0]) == session_id  # session_id (UUID)
-    assert call_args[0][1] == "https://example.com"  # normalized URL
+    assert call_args[0][1] == "https://example.com/"  # normalized URL

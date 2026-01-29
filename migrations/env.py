@@ -4,13 +4,15 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
+load_dotenv()
 
 config = context.config
 
-# Prefer DATABASE_URL from the environment over the value in alembic.ini.
-database_url = os.getenv("DATABASE_URL")
+# Prefer TEST_DATABASE_URL (for pytest) then DATABASE_URL over alembic.ini.
+database_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 
@@ -60,4 +62,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

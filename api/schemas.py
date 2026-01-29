@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 
 # Request schemas
@@ -52,8 +52,7 @@ class AuditSessionResponse(BaseModel):
     low_confidence: bool
     pages: list[AuditPageResponse] = Field(default_factory=list)
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditPageResponse(BaseModel):
@@ -67,8 +66,7 @@ class AuditPageResponse(BaseModel):
     load_timings: dict
     low_confidence_reasons: list[str]
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ArtifactResponse(BaseModel):
@@ -84,8 +82,7 @@ class ArtifactResponse(BaseModel):
     retention_until: Optional[datetime] = None
     checksum: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CreateAuditResponse(BaseModel):

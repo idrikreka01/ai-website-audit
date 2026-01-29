@@ -43,7 +43,7 @@
   - retention_policy (standard | short | long)
   - attempts (integer)
   - final_url (after redirects)
-  - crawl_policy_version (e.g., v1.0)
+  - crawl_policy_version (e.g., v1.1; PDP-not-found → partial)
   - error_summary (nullable)
   - config_snapshot (frozen crawl policy config for this run)
   - low_confidence (boolean)
@@ -171,7 +171,7 @@
 
 - **audit_sessions**
   - id, url, status, created_at, final_url, mode, attempts, error_summary
-  - crawl_policy_version, config_snapshot, low_confidence
+  - crawl_policy_version, config_snapshot, low_confidence, pdp_url (nullable)
 
 - **audit_pages**
   - id, session_id, page_type, viewport, status, load_timings
@@ -208,7 +208,7 @@
   - queued → running → completed | failed | partial
 
 - **Error behavior**
-  - If PDP fails but homepage succeeds → partial
+  - If PDP fails but homepage succeeds → partial (error_summary e.g. "PDP not found").
   - If both fail → failed with error summary
 
 Note: For MVP, the API may use SQLAlchemy table reflection for DB access. Plan to

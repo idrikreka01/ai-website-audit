@@ -12,4 +12,3 @@ Both the API service and the worker service should treat `shared/` as
 read-only infrastructure code and avoid introducing service-specific
 coupling here.
 """
-

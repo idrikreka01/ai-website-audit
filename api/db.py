@@ -12,11 +12,13 @@ from typing import Generator
 from sqlalchemy.orm import Session
 
 from shared.db import (
-    get_db_session as _get_db_session,
-    get_audit_sessions_table,
-    get_audit_pages_table,
     get_artifacts_table,
+    get_audit_pages_table,
+    get_audit_sessions_table,
     get_crawl_logs_table,
+)
+from shared.db import (
+    get_db_session as _get_db_session,
 )
 
 # Re-export table getters for backward compatibility

@@ -11,11 +11,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Generator
 
-from sqlalchemy import create_engine, MetaData, Table
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import MetaData, Table, create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from shared.config import get_config
-
 
 # Global engine and session factory (initialized on first use).
 _engine = None

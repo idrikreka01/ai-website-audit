@@ -26,6 +26,12 @@ select = [
 ]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+"migrations/*.py" = ["E501"]
+"migrations/versions/*.py" = ["E501"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["shared", "api", "worker"]
 
+[tool.pytest.ini_options]
+testpaths = ["api/tests", "worker/tests"]

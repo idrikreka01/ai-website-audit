@@ -34,6 +34,7 @@ The schema is implemented via Alembic migrations in `migrations/`.
 - `crawl_policy_version` (`text`, not null)
 - `config_snapshot` (`jsonb`, not null) — frozen crawl policy config for this run
 - `low_confidence` (`boolean`, not null, default `false`)
+- `pdp_url` (`text`, nullable) — selected PDP URL from discovery (Task 07)
 
 Indexes:
 - `ix_audit_sessions_status_created_at` on (`status`, `created_at`)

@@ -4,8 +4,6 @@ Unit tests for low-confidence evaluation rules.
 
 from __future__ import annotations
 
-import pytest
-
 from worker.low_confidence import evaluate_low_confidence
 
 

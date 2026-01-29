@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import logging
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import audits
 from shared.config import get_config
 from shared.logging import configure_logging
+
+load_dotenv()
 
 
 def create_app() -> FastAPI:
@@ -23,7 +26,11 @@ def create_app() -> FastAPI:
 
     # Configure structured logging
     log_level = logging.getLevelName(config.log_level.upper())
-    configure_logging(level=log_level)
+    configure_logging(
+        level=log_level,
+        log_file=config.log_file,
+        log_stdout=config.log_stdout,
+    )
 
     app = FastAPI(
         title="AI Website Audit API",
