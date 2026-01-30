@@ -1,7 +1,7 @@
 """
-PDP validation: 2-of-4 rule, price pattern, signal extraction.
+PDP validation: base (price + title+image) plus strong signal (add-to-cart or product schema).
 
-Per TECH_SPEC_V1.md; no behavior change.
+Per TECH_SPEC_V1.1.md §3: valid PDP = (price + title+image) and (add-to-cart OR schema).
 """
 
 from __future__ import annotations
@@ -23,24 +23,28 @@ def evaluate_pdp_validation_signals(
     has_add_to_cart: bool,
     has_product_schema: bool,
     has_title_and_image: bool,
-) -> tuple[bool, int]:
+) -> tuple[bool, bool, bool]:
     """
-    Evaluate 2-of-4 PDP validation rule (pure function for tests).
+    Evaluate PDP validation rule (pure function for tests).
 
-    Returns (is_valid: bool, count_met: int).
+    Valid PDP requires: (price + title+image) and (add-to-cart OR product schema).
+    Returns (is_valid: bool, base_met: bool, strong_signal_met: bool).
     """
-    count = sum([has_price, has_add_to_cart, has_product_schema, has_title_and_image])
-    return (count >= 2, count)
+    base_met = has_price and has_title_and_image
+    strong_signal_met = has_add_to_cart or has_product_schema
+    is_valid = base_met and strong_signal_met
+    return (is_valid, base_met, strong_signal_met)
 
 
 def is_valid_pdp_page(signals: dict) -> bool:
     """
-    Return True if signals dict indicates a valid PDP (2-of-4 rule).
+    Return True if signals dict indicates a valid PDP.
 
+    Rule: (price + title+image) and (add-to-cart OR product schema).
     Pure function for tests. signals keys: has_price, has_add_to_cart,
     has_product_schema, has_title_and_image.
     """
-    valid, _ = evaluate_pdp_validation_signals(
+    valid, _, _ = evaluate_pdp_validation_signals(
         has_price=bool(signals.get("has_price")),
         has_add_to_cart=bool(signals.get("has_add_to_cart")),
         has_product_schema=bool(signals.get("has_product_schema")),

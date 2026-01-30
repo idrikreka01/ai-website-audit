@@ -1,12 +1,20 @@
 # TECH SPEC V1.1 — Operational Addendum
 
 **Version**: 1.1  
-**Status**: Documentation consolidation (no behavior change)  
-**References**: TECH_SPEC_V1.md, TECH_SPEC_V1.1.md, TECH_SPEC_V1.1.md, .cursorrules
+**Status**: Operational addendum + PDP validation tightening (v1.2)  
+**References**: TECH_SPEC_V1.md, .cursorrules
 
 ---
 
-All sections of **TECH_SPEC_V1.md** apply unchanged. This document consolidates key operational behavior for Redis lock/throttle and retention cleanup. Implementation references: worker constants.py, locking.py, config (shared/config.py), cleanup.py, repository (get_expired_html_artifacts, mark_artifact_deleted).
+All sections of **TECH_SPEC_V1.md** apply unchanged unless overridden below. This document consolidates key operational behavior for Redis lock/throttle, retention cleanup, and PDP validation. Implementation references: worker constants.py, locking.py, config (shared/config.py), cleanup.py, repository (get_expired_html_artifacts, mark_artifact_deleted), worker/crawl/pdp_validation.py.
+
+---
+
+## 0) Crawl policy version
+
+- **crawl_policy_version**: `v1.2` (bumped for PDP validation tightening below).
+- **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
+- **v1.2**: PDP validation requires (price + title+image) plus at least one strong product signal (add-to-cart OR product schema) to reduce category/store-hub false positives.
 
 ---
 
@@ -65,4 +73,11 @@ All sections of **TECH_SPEC_V1.md** apply unchanged. This document consolidates 
 
 ---
 
-**No behavior changes are implied by this document; it is documentation consolidation only.**
+## 3) PDP validation (tightened for v1.2)
+
+- **Goal**: Reduce false positives on category/store-hub pages (e.g. Instacart) by requiring at least one strong product signal.
+- **Rule**: A page is a valid PDP only if:
+  1. **Base signals** (all required): price (currency + numeric or price element), product title + image (h1 or product-title class + at least one img).
+  2. **Strong product signal** (at least one required): add-to-cart/buy button OR product schema.org JSON-LD.
+- **Determinism**: Unchanged; signal extraction and evaluation remain deterministic. No other crawler behavior changes.
+- **Implementation**: `worker/crawl/pdp_validation.py` — `evaluate_pdp_validation_signals` / `is_valid_pdp_page`.

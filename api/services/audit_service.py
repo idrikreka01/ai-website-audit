@@ -25,7 +25,8 @@ logger = get_logger(__name__)
 
 # Current crawl policy version (hardcoded for MVP; can be made configurable later).
 # v1.1: PDP-not-found with homepage success → session status partial.
-CRAWL_POLICY_VERSION = "v1.1"
+# v1.2: PDP validation tightened — (price + title+image) plus (add-to-cart or product schema).
+CRAWL_POLICY_VERSION = "v1.2"
 
 
 def normalize_url(url: str) -> str:

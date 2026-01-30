@@ -1,8 +1,8 @@
 """
-Unit tests for PDP validation: 2-of-4 rule, signal evaluation, and signal extraction.
+Unit tests for PDP validation: (price + title+image) plus (add-to-cart or product schema).
 
 Covers: price detection (regex + selector fallback), add-to-cart selectors,
-schema.org detection, title+image detection. No change to validation rule.
+schema.org detection, title+image detection, and the tightened validation rule.
 """
 
 from __future__ import annotations
@@ -17,73 +17,97 @@ from worker.crawl import (
 )
 
 
-def test_evaluate_pdp_validation_signals_two_met():
-    valid, count = evaluate_pdp_validation_signals(
+def test_evaluate_pdp_validation_signals_valid_base_plus_add_to_cart():
+    """Valid: price + title+image + add-to-cart (no schema)."""
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
         has_price=True,
         has_add_to_cart=True,
         has_product_schema=False,
-        has_title_and_image=False,
+        has_title_and_image=True,
     )
     assert valid is True
-    assert count == 2
+    assert base_met is True
+    assert strong_met is True
 
 
-def test_evaluate_pdp_validation_signals_three_met():
-    valid, count = evaluate_pdp_validation_signals(
+def test_evaluate_pdp_validation_signals_valid_base_plus_schema():
+    """Valid: price + title+image + product schema (no add-to-cart)."""
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
         has_price=True,
+        has_add_to_cart=False,
+        has_product_schema=True,
+        has_title_and_image=True,
+    )
+    assert valid is True
+    assert base_met is True
+    assert strong_met is True
+
+
+def test_evaluate_pdp_validation_signals_invalid_base_only():
+    """Invalid: price + title+image only (no strong signal)."""
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
+        has_price=True,
+        has_add_to_cart=False,
+        has_product_schema=False,
+        has_title_and_image=True,
+    )
+    assert valid is False
+    assert base_met is True
+    assert strong_met is False
+
+
+def test_evaluate_pdp_validation_signals_invalid_strong_only():
+    """Invalid: add-to-cart + schema but missing base (no price or no title+image)."""
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
+        has_price=False,
         has_add_to_cart=True,
         has_product_schema=True,
         has_title_and_image=False,
     )
-    assert valid is True
-    assert count == 3
-
-
-def test_evaluate_pdp_validation_signals_one_met():
-    valid, count = evaluate_pdp_validation_signals(
-        has_price=True,
-        has_add_to_cart=False,
-        has_product_schema=False,
-        has_title_and_image=False,
-    )
     assert valid is False
-    assert count == 1
+    assert base_met is False
+    assert strong_met is True
 
 
 def test_evaluate_pdp_validation_signals_zero_met():
-    valid, count = evaluate_pdp_validation_signals(
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
         has_price=False,
         has_add_to_cart=False,
         has_product_schema=False,
         has_title_and_image=False,
     )
     assert valid is False
-    assert count == 0
+    assert base_met is False
+    assert strong_met is False
 
 
 def test_evaluate_pdp_validation_signals_four_met():
-    valid, count = evaluate_pdp_validation_signals(
+    """Valid: all four signals (base + both strong)."""
+    valid, base_met, strong_met = evaluate_pdp_validation_signals(
         has_price=True,
         has_add_to_cart=True,
         has_product_schema=True,
         has_title_and_image=True,
     )
     assert valid is True
-    assert count == 4
+    assert base_met is True
+    assert strong_met is True
 
 
 def test_is_valid_pdp_page_dict():
+    # Valid: base (price + title+image) + add-to-cart
     assert (
         is_valid_pdp_page(
             {
                 "has_price": True,
                 "has_add_to_cart": True,
                 "has_product_schema": False,
-                "has_title_and_image": False,
+                "has_title_and_image": True,
             }
         )
         is True
     )
+    # Invalid: price only (missing title+image and strong signal)
     assert (
         is_valid_pdp_page(
             {
@@ -95,10 +119,11 @@ def test_is_valid_pdp_page_dict():
         )
         is False
     )
+    # Valid: base + product schema
     assert (
         is_valid_pdp_page(
             {
-                "has_price": False,
+                "has_price": True,
                 "has_add_to_cart": False,
                 "has_product_schema": True,
                 "has_title_and_image": True,
@@ -376,99 +401,77 @@ async def test_extract_signals_title_and_image_fails_without_title():
     assert signals["has_title_and_image"] is False
 
 
-# --- Validation rule edge cases (2-of-4) ---
+# --- Validation rule edge cases: (price + title+image) + (add-to-cart or schema) ---
+
+
+def _expected_valid(price: bool, cart: bool, schema: bool, title_img: bool) -> bool:
+    """Valid iff base (price + title+image) and strong (cart or schema)."""
+    base = price and title_img
+    strong = cart or schema
+    return base and strong
 
 
 def test_evaluate_pdp_validation_signals_all_combinations():
-    """Test all 16 combinations of 4 signals for 2-of-4 rule."""
-    signals = [
-        (False, False, False, False),  # 0 met -> invalid
-        (True, False, False, False),  # 1 met -> invalid
-        (False, True, False, False),  # 1 met -> invalid
-        (False, False, True, False),  # 1 met -> invalid
-        (False, False, False, True),  # 1 met -> invalid
-        (True, True, False, False),  # 2 met -> valid
-        (True, False, True, False),  # 2 met -> valid
-        (True, False, False, True),  # 2 met -> valid
-        (False, True, True, False),  # 2 met -> valid
-        (False, True, False, True),  # 2 met -> valid
-        (False, False, True, True),  # 2 met -> valid
-        (True, True, True, False),  # 3 met -> valid
-        (True, True, False, True),  # 3 met -> valid
-        (True, False, True, True),  # 3 met -> valid
-        (False, True, True, True),  # 3 met -> valid
-        (True, True, True, True),  # 4 met -> valid
-    ]
-
-    expected_valid = [
-        False,
-        False,
-        False,
-        False,
-        False,  # 0-1 met
-        True,
-        True,
-        True,
-        True,
-        True,
-        True,  # 2 met
-        True,
-        True,
-        True,
-        True,  # 3 met
-        True,  # 4 met
-    ]
-
-    for i, (price, cart, schema, title_img) in enumerate(signals):
-        valid, count = evaluate_pdp_validation_signals(
-            has_price=price,
-            has_add_to_cart=cart,
-            has_product_schema=schema,
-            has_title_and_image=title_img,
-        )
-        assert valid == expected_valid[i], f"Failed at index {i}: {signals[i]}"
-        assert count == sum([price, cart, schema, title_img])
+    """Test all 16 combinations for (base + strong signal) rule."""
+    for price in (False, True):
+        for cart in (False, True):
+            for schema in (False, True):
+                for title_img in (False, True):
+                    valid, base_met, strong_met = evaluate_pdp_validation_signals(
+                        has_price=price,
+                        has_add_to_cart=cart,
+                        has_product_schema=schema,
+                        has_title_and_image=title_img,
+                    )
+                    expected = _expected_valid(price, cart, schema, title_img)
+                    assert (
+                        valid == expected
+                    ), f"price={price} cart={cart} schema={schema} title_img={title_img}"
+                    assert base_met == (price and title_img)
+                    assert strong_met == (cart or schema)
 
 
 def test_evaluate_pdp_validation_signals_boundary():
-    """Test 2-of-4 rule boundary: exactly 2 met is valid, 1 is not."""
-    # Exactly 1 signal met (boundary below threshold)
-    valid_1, count_1 = evaluate_pdp_validation_signals(
+    """Boundary: base only (no strong signal) is invalid; base + strong is valid."""
+    # Base met, no strong signal -> invalid
+    valid_1, base_1, strong_1 = evaluate_pdp_validation_signals(
         has_price=True,
         has_add_to_cart=False,
         has_product_schema=False,
-        has_title_and_image=False,
+        has_title_and_image=True,
     )
     assert valid_1 is False
-    assert count_1 == 1
+    assert base_1 is True
+    assert strong_1 is False
 
-    # Exactly 2 signals met (boundary at threshold)
-    valid_2, count_2 = evaluate_pdp_validation_signals(
+    # Base + add-to-cart -> valid
+    valid_2, base_2, strong_2 = evaluate_pdp_validation_signals(
         has_price=True,
         has_add_to_cart=True,
         has_product_schema=False,
-        has_title_and_image=False,
+        has_title_and_image=True,
     )
     assert valid_2 is True
-    assert count_2 == 2
+    assert base_2 is True
+    assert strong_2 is True
 
 
 def test_is_valid_pdp_page_all_signal_combinations():
     """Test is_valid_pdp_page wrapper with various signal dicts."""
-    # Valid: 2 signals
+    # Valid: base + add-to-cart
     assert (
         is_valid_pdp_page(
             {
                 "has_price": True,
                 "has_add_to_cart": True,
                 "has_product_schema": False,
-                "has_title_and_image": False,
+                "has_title_and_image": True,
             }
         )
         is True
     )
 
-    # Valid: 3 signals
+    # Valid: base + product schema
     assert (
         is_valid_pdp_page(
             {
@@ -481,11 +484,24 @@ def test_is_valid_pdp_page_all_signal_combinations():
         is True
     )
 
-    # Invalid: 1 signal
+    # Invalid: title+image only (no price, no strong signal)
     assert (
         is_valid_pdp_page(
             {
                 "has_price": False,
+                "has_add_to_cart": False,
+                "has_product_schema": False,
+                "has_title_and_image": True,
+            }
+        )
+        is False
+    )
+
+    # Invalid: base only (no strong signal)
+    assert (
+        is_valid_pdp_page(
+            {
+                "has_price": True,
                 "has_add_to_cart": False,
                 "has_product_schema": False,
                 "has_title_and_image": True,
