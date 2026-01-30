@@ -2,14 +2,18 @@
 Artifact persistence: screenshot, visible_text, features_json, html_gz.
 
 Encapsulates storage writes, repository.create_artifact, and artifact logs.
-Unifies HTML retention decision via should_store_html.
-No behavior change.
+DB artifact records created only after successful writes; write failures logged
+with context (session_id, page_type, viewport, artifact_type, error_type).
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 from uuid import UUID
 
+from shared.config import get_config
+from shared.logging import get_logger
 from worker.repository import AuditRepository
 from worker.storage import (
     build_artifact_path,
@@ -19,6 +23,8 @@ from worker.storage import (
     write_screenshot,
     write_text,
 )
+
+logger = get_logger(__name__)
 
 
 def should_store_html(
@@ -47,15 +53,39 @@ def save_screenshot(
     page_type: str,
     viewport: str,
     screenshot_bytes: bytes | None,
-) -> str | None:
+) -> Optional[str]:
     """
-    Write screenshot to storage, create artifact and log. Returns "screenshot" if saved, else None.
+    Write screenshot to storage; create artifact and log only on success.
+    Returns "screenshot" if saved, else None. Write failures are logged with context.
     """
     if not screenshot_bytes:
         return None
-    path = build_artifact_path(session_id, page_type, viewport, "screenshot")
-    size, checksum = write_screenshot(path, screenshot_bytes)
-    storage_uri = get_storage_uri(path)
+    try:
+        path = build_artifact_path(session_id, page_type, viewport, "screenshot")
+        size, checksum = write_screenshot(path, screenshot_bytes)
+        storage_uri = get_storage_uri(path)
+    except Exception as e:
+        logger.error(
+            "artifact_write_failed",
+            artifact_type="screenshot",
+            session_id=str(session_id),
+            page_type=page_type,
+            viewport=viewport,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="error",
+            event_type="artifact",
+            message="Screenshot write failed",
+            details={
+                "artifact_type": "screenshot",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        raise
     repository.create_artifact(
         session_id=session_id,
         page_id=page_id,
@@ -69,7 +99,14 @@ def save_screenshot(
         level="info",
         event_type="artifact",
         message="Screenshot saved",
-        details={"size_bytes": size, "storage_uri": storage_uri},
+        details={"size_bytes": size, "checksum": checksum, "storage_uri": storage_uri},
+    )
+    logger.info(
+        "artifact_saved",
+        artifact_type="screenshot",
+        size_bytes=size,
+        checksum=checksum,
+        storage_uri=storage_uri,
     )
     return "screenshot"
 
@@ -81,11 +118,34 @@ def save_visible_text(
     page_type: str,
     viewport: str,
     visible_text: str,
-) -> str:
-    """Write visible text to storage, create artifact and log. Returns "visible_text"."""
-    path = build_artifact_path(session_id, page_type, viewport, "visible_text")
-    size, checksum = write_text(path, visible_text)
-    storage_uri = get_storage_uri(path)
+) -> Optional[str]:
+    """Write visible text to storage; create artifact only on success."""
+    try:
+        path = build_artifact_path(session_id, page_type, viewport, "visible_text")
+        size, checksum = write_text(path, visible_text)
+        storage_uri = get_storage_uri(path)
+    except Exception as e:
+        logger.error(
+            "artifact_write_failed",
+            artifact_type="visible_text",
+            session_id=str(session_id),
+            page_type=page_type,
+            viewport=viewport,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="error",
+            event_type="artifact",
+            message="Visible text write failed",
+            details={
+                "artifact_type": "visible_text",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        raise
     repository.create_artifact(
         session_id=session_id,
         page_id=page_id,
@@ -99,7 +159,14 @@ def save_visible_text(
         level="info",
         event_type="artifact",
         message="Visible text saved",
-        details={"size_bytes": size, "storage_uri": storage_uri},
+        details={"size_bytes": size, "checksum": checksum, "storage_uri": storage_uri},
+    )
+    logger.info(
+        "artifact_saved",
+        artifact_type="visible_text",
+        size_bytes=size,
+        checksum=checksum,
+        storage_uri=storage_uri,
     )
     return "visible_text"
 
@@ -111,11 +178,34 @@ def save_features_json(
     page_type: str,
     viewport: str,
     features: dict,
-) -> str:
-    """Write features JSON to storage, create artifact and log. Returns "features_json"."""
-    path = build_artifact_path(session_id, page_type, viewport, "features_json")
-    size, checksum = write_json(path, features)
-    storage_uri = get_storage_uri(path)
+) -> Optional[str]:
+    """Write features JSON to storage; create artifact only on success."""
+    try:
+        path = build_artifact_path(session_id, page_type, viewport, "features_json")
+        size, checksum = write_json(path, features)
+        storage_uri = get_storage_uri(path)
+    except Exception as e:
+        logger.error(
+            "artifact_write_failed",
+            artifact_type="features_json",
+            session_id=str(session_id),
+            page_type=page_type,
+            viewport=viewport,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="error",
+            event_type="artifact",
+            message="Features JSON write failed",
+            details={
+                "artifact_type": "features_json",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        raise
     repository.create_artifact(
         session_id=session_id,
         page_id=page_id,
@@ -129,7 +219,14 @@ def save_features_json(
         level="info",
         event_type="artifact",
         message="Features JSON saved",
-        details={"size_bytes": size, "storage_uri": storage_uri},
+        details={"size_bytes": size, "checksum": checksum, "storage_uri": storage_uri},
+    )
+    logger.info(
+        "artifact_saved",
+        artifact_type="features_json",
+        size_bytes=size,
+        checksum=checksum,
+        storage_uri=storage_uri,
     )
     return "features_json"
 
@@ -141,17 +238,43 @@ def save_html_gz(
     page_type: str,
     viewport: str,
     html_content: str,
-) -> str:
-    """Write HTML (gzip) to storage, create artifact and log. Returns "html_gz"."""
-    path = build_artifact_path(session_id, page_type, viewport, "html_gz")
-    size, checksum = write_html_gz(path, html_content)
-    storage_uri = get_storage_uri(path)
+) -> Optional[str]:
+    """Write HTML (gzip) to storage; create artifact only on success. Returns "html_gz" or None."""
+    try:
+        path = build_artifact_path(session_id, page_type, viewport, "html_gz")
+        size, checksum = write_html_gz(path, html_content)
+        storage_uri = get_storage_uri(path)
+    except Exception as e:
+        logger.error(
+            "artifact_write_failed",
+            artifact_type="html_gz",
+            session_id=str(session_id),
+            page_type=page_type,
+            viewport=viewport,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="error",
+            event_type="artifact",
+            message="HTML (gzip) write failed",
+            details={
+                "artifact_type": "html_gz",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        raise
+    config = get_config()
+    retention_until = datetime.now(timezone.utc) + timedelta(days=config.html_retention_days)
     repository.create_artifact(
         session_id=session_id,
         page_id=page_id,
         artifact_type="html_gz",
         storage_uri=storage_uri,
         size_bytes=size,
+        retention_until=retention_until,
         checksum=checksum,
     )
     repository.create_log(
@@ -159,6 +282,19 @@ def save_html_gz(
         level="info",
         event_type="artifact",
         message="HTML (gzip) saved",
-        details={"size_bytes": size, "storage_uri": storage_uri},
+        details={
+            "size_bytes": size,
+            "checksum": checksum,
+            "storage_uri": storage_uri,
+            "retention_until": retention_until.isoformat(),
+        },
+    )
+    logger.info(
+        "artifact_saved",
+        artifact_type="html_gz",
+        size_bytes=size,
+        checksum=checksum,
+        storage_uri=storage_uri,
+        retention_until=retention_until.isoformat(),
     )
     return "html_gz"

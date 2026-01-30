@@ -68,6 +68,7 @@
   - size_bytes
   - created_at
   - retention_until (nullable)
+  - deleted_at (nullable; soft-delete marker set by retention cleanup)
   - checksum (optional)
 
 - **logs**
@@ -125,6 +126,13 @@
   - Always-stored artifacts: standard retention (long-lived)
   - HTML artifacts: short retention (default 14 days, configurable 7–30)
 
+- **Retention cleanup**
+  - Expired html_gz artifacts (retention_until &lt; now) are deleted from storage and marked with deleted_at in the DB.
+  - **Flow**: Query expired html_gz where deleted_at IS NULL → delete file from storage → set deleted_at = now.
+  - **Dry-run**: When enabled, log candidates only; no file delete or DB update.
+  - **Batch**: Configurable batch size per run (default 100).
+  - **Manual CLI**: `python -m worker.cleanup` runs one cleanup pass; loads .env. No scheduling in spec; see TECH_SPEC_V1.1.md for scheduler options.
+
 - **Naming convention**
   - `{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}`
   - Example: `session123/homepage/desktop/screenshot.png`
@@ -178,7 +186,7 @@
   - low_confidence_reasons
 
 - **artifacts**
-  - id, session_id, page_id, type, storage_uri, size_bytes, retention_until
+  - id, session_id, page_id, type, storage_uri, size_bytes, retention_until, deleted_at (nullable)
 
 - **crawl_logs**
   - id, session_id, level, event_type, message, details, timestamp
@@ -339,6 +347,7 @@ migrate to explicit ORM models before worker integration if domain complexity gr
 - crawl_policy_version is mandatory for every session.
 - config_snapshot is a frozen policy config used during the run.
 - Sessions are comparable only within the same crawl_policy_version.
+- Retention cleanup (deleted_at, cleanup job) is post-crawl maintenance and does not change crawl behavior; no crawl_policy_version bump required for retention cleanup.
 
 ---
 

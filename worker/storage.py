@@ -64,7 +64,7 @@ def write_screenshot(path: Path, image_bytes: bytes) -> tuple[int, str | None]:
     """
     Write screenshot bytes to disk.
 
-    Returns (size_bytes, checksum).
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
     """
     ensure_artifact_dir(path)
     path.write_bytes(image_bytes)
@@ -77,7 +77,7 @@ def write_text(path: Path, text: str) -> tuple[int, str | None]:
     """
     Write text content to disk (UTF-8).
 
-    Returns (size_bytes, checksum).
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
     """
     ensure_artifact_dir(path)
     text_bytes = text.encode("utf-8")
@@ -91,7 +91,7 @@ def write_json(path: Path, data: dict) -> tuple[int, str | None]:
     """
     Write JSON data to disk (UTF-8, pretty-printed).
 
-    Returns (size_bytes, checksum).
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
     """
     ensure_artifact_dir(path)
     json_bytes = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
@@ -105,7 +105,7 @@ def write_html_gz(path: Path, html: str) -> tuple[int, str | None]:
     """
     Write HTML content as gzip-compressed file.
 
-    Returns (size_bytes, checksum).
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
     """
     ensure_artifact_dir(path)
     html_bytes = html.encode("utf-8")

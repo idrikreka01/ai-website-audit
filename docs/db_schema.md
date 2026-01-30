@@ -65,6 +65,7 @@ Indexes:
 - `size_bytes` (`bigint`, not null)
 - `created_at` (`timestamptz`, not null, default `now()`)
 - `retention_until` (`timestamptz`, nullable)
+- `deleted_at` (`timestamptz`, nullable) — soft delete marker for retention cleanup
 - `checksum` (`text`, nullable)
 
 Indexes:
@@ -83,4 +84,3 @@ Indexes:
 
 Indexes:
 - `ix_crawl_logs_session_timestamp` on (`session_id`, `timestamp`)
-

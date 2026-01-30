@@ -1,8 +1,10 @@
 """
 PDP candidate discovery: path matching, URL normalization, link extraction.
 
-Includes product-like container pass for sites without /product-style URLs.
-Validation (2-of-4 rule) and determinism unchanged.
+Uses eTLD+1 for internal links (same site across subdomains, e.g. www.example.com).
+Includes product-like container pass: anchors inside containers with 2-of-4 signals
+(price, title, image, add-to-cart) are candidates regardless of URL structure.
+Validation (2-of-4 rule) and determinism unchanged. Cap applied after dedupe.
 """
 
 from __future__ import annotations
@@ -13,12 +15,39 @@ from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import Page
 
+from shared.logging import get_logger
 from worker.crawl.constants import (
     EXCLUDED_PATH_SEGMENTS,
     MAX_PDP_CANDIDATES,
     PDP_PATH_PATTERNS,
-    PRODUCT_LIKE_CONTAINER_SELECTORS,
+    PRODUCT_CONTAINER_ADD_TO_CART_SELECTORS,
+    PRODUCT_CONTAINER_IMAGE_SELECTOR,
+    PRODUCT_CONTAINER_MIN_SIGNALS,
+    PRODUCT_CONTAINER_SELECTORS,
+    PRODUCT_CONTAINER_TITLE_SELECTORS,
 )
+from worker.crawl.pdp_validation import PRICE_PATTERN
+
+logger = get_logger(__name__)
+
+
+def get_etld_plus_one(netloc: str) -> str:
+    """
+    Return eTLD+1 (site domain) for internal link comparison.
+
+    Same eTLD+1 => internal (e.g. foleja.com and www.foleja.com).
+    Heuristic: strip leading "www.", then for 3+ parts use last two
+    (e.g. shop.example.com -> example.com).
+    """
+    n = (netloc or "").lower().strip()
+    if not n:
+        return ""
+    if n.startswith("www."):
+        n = n[4:]
+    parts = n.split(".")
+    if len(parts) >= 3:
+        return ".".join(parts[-2:])
+    return n
 
 
 def is_pdp_candidate_path(path: str) -> bool:
@@ -69,13 +98,13 @@ def filter_pdp_candidate_urls(
     max_candidates: int = MAX_PDP_CANDIDATES,
 ) -> list[str]:
     """
-    Filter URLs to same-domain, PDP-path candidates; exclude account/cart/checkout/logout;
-    dedupe and return in input (insertion) order, capped at max_candidates.
+    Filter URLs to same-site (eTLD+1), PDP-path candidates; exclude account/cart/checkout/logout;
+    dedupe and return in input (insertion) order; cap applied after dedupe.
 
     Pure function for unit tests.
     """
     parsed_base = urlparse(base_url)
-    base_netloc = (parsed_base.netloc or "").lower()
+    base_site = get_etld_plus_one(parsed_base.netloc or "")
     seen: set[str] = set()
     result: list[str] = []
     for raw in urls:
@@ -83,7 +112,7 @@ def filter_pdp_candidate_urls(
         if not normalized:
             continue
         parsed = urlparse(normalized)
-        if (parsed.netloc or "").lower() != base_netloc:
+        if get_etld_plus_one(parsed.netloc or "") != base_site:
             continue
         path = (parsed.path or "/").lower()
         if _path_has_excluded_segment(path):
@@ -105,13 +134,13 @@ def filter_product_context_urls(
     max_candidates: int = MAX_PDP_CANDIDATES,
 ) -> list[str]:
     """
-    Filter URLs to same-domain, exclude account/cart/checkout; no URL pattern required.
+    Filter URLs to same-site (eTLD+1), exclude account/cart/checkout; no URL pattern required.
 
     Use for product-like container links (e.g. /categories/tv/TV-LED-FUEGO-43EL720GTV).
-    Dedupe and return in input order, capped at max_candidates. Pure function for tests.
+    Dedupe and return in input order; cap applied after dedupe. Pure function for tests.
     """
     parsed_base = urlparse(base_url)
-    base_netloc = (parsed_base.netloc or "").lower()
+    base_site = get_etld_plus_one(parsed_base.netloc or "")
     seen: set[str] = set()
     result: list[str] = []
     for raw in urls:
@@ -119,7 +148,7 @@ def filter_product_context_urls(
         if not normalized:
             continue
         parsed = urlparse(normalized)
-        if (parsed.netloc or "").lower() != base_netloc:
+        if get_etld_plus_one(parsed.netloc or "") != base_site:
             continue
         path = (parsed.path or "/").lower()
         if _path_has_excluded_segment(path):
@@ -133,6 +162,58 @@ def filter_product_context_urls(
     return result[:max_candidates]
 
 
+async def _container_has_min_signals(container, min_signals: int) -> bool:
+    """
+    Return True if the container (Locator) has at least min_signals of:
+    price, title, image, add-to-cart. Uses PRICE_PATTERN for price.
+    """
+    count = 0
+    try:
+        # Price: text content of container
+        text = await container.inner_text()
+        if PRICE_PATTERN.search(text):
+            count += 1
+        if count >= min_signals:
+            return True
+        # Title
+        for sel in PRODUCT_CONTAINER_TITLE_SELECTORS:
+            if await container.locator(sel).first.count() > 0:
+                count += 1
+                break
+        if count >= min_signals:
+            return True
+        # Image
+        if await container.locator(PRODUCT_CONTAINER_IMAGE_SELECTOR).first.count() > 0:
+            count += 1
+        if count >= min_signals:
+            return True
+        # Add-to-cart
+        for sel in PRODUCT_CONTAINER_ADD_TO_CART_SELECTORS:
+            if await container.locator(sel).first.count() > 0:
+                count += 1
+                break
+    except Exception:
+        pass
+    return count >= min_signals
+
+
+async def _is_inside_nav_or_footer(link_handle) -> bool:
+    """Return True if the link is inside nav or footer (and not inside a product container)."""
+    try:
+        # Check if any ancestor is nav or footer
+        return await link_handle.evaluate("""(el) => {
+            let n = el;
+            while (n) {
+                const tag = (n.tagName || '').toLowerCase();
+                if (tag === 'nav' || tag === 'footer') return true;
+                n = n.parentElement;
+            }
+            return false;
+        }""")
+    except Exception:
+        return False
+
+
 async def extract_pdp_candidate_links(
     page: Page,
     base_url: str,
@@ -141,16 +222,68 @@ async def extract_pdp_candidate_links(
     """
     Extract internal PDP candidate links from the page (after page-ready + scroll).
 
-    Two passes (DOM order):
-    1. Product-like containers: links inside .product, .product-card, [data-product], etc.
-       Included even when URL does not match PDP_PATH_PATTERNS (e.g. /categories/tv/SKU).
-    2. Product grids / featured / main: links required to match PDP path patterns.
-
-    Same-domain, exclude account/cart/checkout; dedupe by normalized URL, cap unchanged.
+    Two passes (DOM order); cap applied after dedupe.
+    1. Context pass: links inside product-like containers (.product, .product-card, etc.)
+       that have at least 2-of-4 signals (price, title, image, add-to-cart). Included
+       even when URL does not match PDP_PATH_PATTERNS (e.g. /categories/tv/MAR-200000509).
+    2. Pattern pass: links from product-grid/main that match PDP path patterns.
+    Links in nav/footer are skipped unless from the context pass (inside a product container).
+    Same-site by eTLD+1; exclude account/cart/checkout; dedupe by normalized URL.
     """
-    base_netloc = urlparse(base_url).netloc.lower()
+    base_site = get_etld_plus_one(urlparse(base_url).netloc or "")
+    hrefs: list[str] = []
+    seen_urls: set[str] = set()
 
-    # (selector, require_path_pattern): product-like first (no pattern), then pattern-based
+    def _same_site(netloc: str) -> bool:
+        return get_etld_plus_one(netloc or "") == base_site
+
+    def _accept_link(normalized: str, require_path_pattern: bool) -> bool:
+        if not normalized or normalized in seen_urls:
+            return False
+        parsed = urlparse(normalized)
+        if not _same_site(parsed.netloc or ""):
+            return False
+        path = (parsed.path or "/").lower()
+        if _path_has_excluded_segment(path):
+            return False
+        if require_path_pattern and not is_pdp_candidate_path(path):
+            return False
+        return True
+
+    # Pass 1: product-like containers with 2-of-4 signals
+    for container_sel in PRODUCT_CONTAINER_SELECTORS:
+        try:
+            containers = await page.locator(container_sel).all()
+            for container in containers:
+                if len(hrefs) >= max_candidates:
+                    break
+                try:
+                    if not await _container_has_min_signals(
+                        container, PRODUCT_CONTAINER_MIN_SIGNALS
+                    ):
+                        continue
+                    links = await container.locator("a[href]").all()
+                    for link in links:
+                        if len(hrefs) >= max_candidates:
+                            break
+                        href = await link.get_attribute("href")
+                        if not href:
+                            continue
+                        normalized = normalize_internal_url(href, base_url)
+                        if not _accept_link(normalized, require_path_pattern=False):
+                            continue
+                        seen_urls.add(normalized)
+                        hrefs.append(normalized)
+                except Exception:
+                    continue
+            if len(hrefs) >= max_candidates:
+                break
+        except Exception:
+            continue
+
+    context_pass_count = len(hrefs)
+
+    # Pass 2: pattern-based selectors; skip links that are only in nav/footer
     pattern_selectors = [
         "[class*='product-grid'] a[href]",
         "[class*='featured-products'] a[href]",
@@ -158,40 +291,38 @@ async def extract_pdp_candidate_links(
         "main a[href]",
         "a[href]",
     ]
-    selector_specs: list[tuple[str, bool]] = [
-        (sel, False) for sel in PRODUCT_LIKE_CONTAINER_SELECTORS
-    ] + [(sel, True) for sel in pattern_selectors]
-
-    hrefs: list[str] = []
-    seen_paths: set[str] = set()
-    for selector, require_path_pattern in selector_specs:
+    for selector in pattern_selectors:
         try:
             links = await page.locator(selector).all()
             for link in links:
-                href = await link.get_attribute("href")
-                if not href:
-                    continue
-                normalized = normalize_internal_url(href, base_url)
-                if not normalized:
-                    continue
-                parsed = urlparse(normalized)
-                if (parsed.netloc or "").lower() != base_netloc:
-                    continue
-                path = (parsed.path or "/").lower()
-                if _path_has_excluded_segment(path):
-                    continue
-                if require_path_pattern and not is_pdp_candidate_path(path):
-                    continue
-                if path in seen_paths:
-                    continue
-                seen_paths.add(path)
-                hrefs.append(normalized)
                 if len(hrefs) >= max_candidates:
                     break
+                try:
+                    if await _is_inside_nav_or_footer(link):
+                        continue
+                    href = await link.get_attribute("href")
+                    if not href:
+                        continue
+                    normalized = normalize_internal_url(href, base_url)
+                    if not _accept_link(normalized, require_path_pattern=True):
+                        continue
+                    seen_urls.add(normalized)
+                    hrefs.append(normalized)
+                except Exception:
+                    continue
             if len(hrefs) >= max_candidates:
                 break
         except Exception:
             continue
-    # Dedupe (preserve insertion order) and cap
-    hrefs = list(dict.fromkeys(hrefs))[:max_candidates]
-    return hrefs
+
+    pattern_pass_count = len(hrefs) - context_pass_count
+    result = list(dict.fromkeys(hrefs))[:max_candidates]
+    logger.info(
+        "pdp_candidate_extraction_complete",
+        context_pass_count=context_pass_count,
+        pattern_pass_count=pattern_pass_count,
+        total_before_cap=len(hrefs),
+        final_count=len(result),
+        max_candidates=max_candidates,
+    )
+    return result

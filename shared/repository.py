@@ -13,7 +13,7 @@ from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from shared.db import (
@@ -260,6 +260,41 @@ class AuditRepository:
         select_stmt = select(self.artifacts_table).where(self.artifacts_table.c.id == artifact_id)
         row = self.session.execute(select_stmt).one()
         return dict(row._mapping)
+
+    def get_expired_html_artifacts(self, batch_size: int) -> list[dict]:
+        """
+        Get expired html_gz artifacts not yet marked deleted.
+
+        Returns list of dicts with id, session_id, storage_uri, size_bytes (and other columns).
+        Ordered by retention_until ASC. Limited to batch_size.
+        """
+        t = self.artifacts_table
+        stmt = (
+            select(t)
+            .where(
+                and_(
+                    t.c.type == "html_gz",
+                    t.c.retention_until != None,  # noqa: E711
+                    t.c.retention_until < func.now(),
+                    t.c.deleted_at == None,  # noqa: E711
+                )
+            )
+            .order_by(t.c.retention_until.asc())
+            .limit(batch_size)
+        )
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
+    def mark_artifact_deleted(self, artifact_id: UUID) -> None:
+        """Set deleted_at to now for the given artifact (soft delete)."""
+        now = datetime.now(timezone.utc)
+        stmt = (
+            self.artifacts_table.update()
+            .where(self.artifacts_table.c.id == artifact_id)
+            .values(deleted_at=now)
+        )
+        self.session.execute(stmt)
+        self.session.flush()
 
     def update_page(
         self,

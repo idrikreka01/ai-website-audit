@@ -1,11 +1,14 @@
 """
 PDP discovery: validate candidates (2-of-4 rule), ensure PDP page records exist.
 
-Logs: pdp_candidate_checked, pdp_selected, pdp_not_found. No behavior change.
+Logs: pdp_candidate_checked (with elapsed_ms, signals), pdp_selected, pdp_not_found.
+No behavior change.
 """
 
 from __future__ import annotations
 
+import time
+from urllib.parse import urlparse
 from uuid import UUID
 
 from playwright.async_api import async_playwright
@@ -48,7 +51,12 @@ async def run_pdp_discovery_and_validation(
 
     Logs: pdp_candidate_checked, pdp_selected, pdp_not_found.
     """
-    bind_request_context(session_id=str(session_id), page_type="pdp")
+    domain = urlparse(base_url).netloc or ""
+    bind_request_context(
+        session_id=str(session_id),
+        page_type="pdp",
+        domain=domain,
+    )
     if not candidate_urls:
         logger.info("pdp_not_found", reason="no_candidates", session_id=str(session_id))
         return None
@@ -60,21 +68,30 @@ async def run_pdp_discovery_and_validation(
             for pdp_url in candidate_urls:
                 page = await context.new_page()
                 try:
+                    t0 = time.monotonic()
                     await page.goto(pdp_url, wait_until="domcontentloaded", timeout=15000)
                     await wait_for_page_ready(page, soft_timeout=8000)
                     signals = await extract_pdp_validation_signals(page)
+                    elapsed_ms = (time.monotonic() - t0) * 1000
                     repository.create_log(
                         session_id=session_id,
                         level="info",
                         event_type="navigation",
                         message="PDP candidate checked",
-                        details={"url": pdp_url, "signals": signals},
+                        details={
+                            "url": pdp_url,
+                            "signals": signals,
+                            "elapsed_ms": round(elapsed_ms, 2),
+                        },
                     )
                     logger.info(
                         "pdp_candidate_checked",
                         url=pdp_url,
-                        session_id=str(session_id),
-                        **signals,
+                        elapsed_ms=round(elapsed_ms, 2),
+                        has_price=signals.get("has_price"),
+                        has_add_to_cart=signals.get("has_add_to_cart"),
+                        has_product_schema=signals.get("has_product_schema"),
+                        has_title_and_image=signals.get("has_title_and_image"),
                     )
                     if is_valid_pdp_page(signals):
                         logger.info(

@@ -101,6 +101,17 @@ Key variables:
 - `STORAGE_ROOT` — base path or URI for artifact storage; default: `./storage`.
 - `ARTIFACTS_DIR` — directory for storing crawl artifacts (screenshots, text, JSON, HTML); default: `./artifacts`.
 
+**Retention cleanup** (see `docs/TECH_SPEC_V1.1.md`):
+- `RETENTION_CLEANUP_ENABLED` — enable cleanup when running scheduled job; default: `false`.
+- `RETENTION_CLEANUP_BATCH_SIZE` — max expired html_gz artifacts per run; default: `100`.
+- `RETENTION_CLEANUP_DRY_RUN` — when `true`, log candidates only (no file delete or DB update); default: `false`.
+
+**Manual retention cleanup** (no scheduling): from the repository root with `PYTHONPATH` set (e.g. `export PYTHONPATH="$(pwd)"`), run:
+```bash
+python -m worker.cleanup
+```
+This executes one cleanup run: expired html_gz artifacts are deleted from storage and marked with `deleted_at` in the DB. Use `RETENTION_CLEANUP_DRY_RUN=true` to preview candidates without deleting.
+
 For local development you may optionally use `python-dotenv` in each service
 to load a `.env` file, but the contents of such files must not be committed.
 

@@ -17,3 +17,7 @@ PDP_VIEWPORTS = [
     ("pdp", "desktop"),
     ("pdp", "mobile"),
 ]
+
+# Redis key prefixes for domain lock and throttle (TECH_SPEC_V1.1.md §2, §3, §5)
+LOCK_KEY_PREFIX = "lock:domain:"
+THROTTLE_KEY_PREFIX = "throttle:domain:"

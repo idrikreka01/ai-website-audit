@@ -29,7 +29,11 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
     """
     session_data = repository.get_session_by_id(session_uuid)
     if session_data is None:
-        logger.error("audit_session_not_found", session_id=str(session_uuid))
+        logger.error(
+            "audit_session_not_found",
+            session_id=str(session_uuid),
+            error_type="ValueError",
+        )
         raise ValueError(f"Audit session {session_uuid} not found")
 
     mode = session_data["mode"]
@@ -65,9 +69,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         details={"status": "running"},
     )
 
-    results = asyncio.run(
-        crawl_homepage_async(url, session_uuid, repository, mode, first_time)
-    )
+    results = asyncio.run(crawl_homepage_async(url, session_uuid, repository, mode, first_time))
 
     pdp_candidate_urls = results.get("desktop", {}).get("pdp_candidate_urls", [])
     repository.create_log(
@@ -81,9 +83,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
     ensure_pdp_page_records(session_uuid, repository)
 
     pdp_url: str | None = asyncio.run(
-        run_pdp_discovery_and_validation(
-            pdp_candidate_urls, url, session_uuid, repository
-        )
+        run_pdp_discovery_and_validation(pdp_candidate_urls, url, session_uuid, repository)
     )
     repository.update_session_pdp_url(session_uuid, pdp_url)
 

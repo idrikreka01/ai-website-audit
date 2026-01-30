@@ -44,6 +44,23 @@ class AppConfig:
     storage_root: str
     artifacts_dir: str
 
+    # Redis lock and throttle (worker; TECH_SPEC_V1.1.md)
+    domain_lock_ttl_seconds: int
+    domain_lock_max_retries: int
+    domain_lock_backoff_base_ms: int
+    domain_min_delay_ms: int
+    domain_throttle_ttl_seconds: int
+    disable_throttle: bool
+    disable_locks: bool
+
+    # HTML artifact retention (worker; TECH_SPEC_V1.1.md, TECH_SPEC_V1.md)
+    html_retention_days: int  # default 14, configurable 7–30
+
+    # Retention cleanup job (TECH_SPEC_V1.1.md)
+    retention_cleanup_enabled: bool
+    retention_cleanup_batch_size: int
+    retention_cleanup_dry_run: bool
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -64,6 +81,18 @@ class AppConfig:
         log_stdout_raw = (os.getenv("LOG_STDOUT") or "true").strip().lower()
         log_stdout = log_stdout_raw in ("true", "1", "yes")
 
+        def _bool_env(name: str, default: bool) -> bool:
+            raw = (os.getenv(name) or str(default)).strip().lower()
+            return raw in ("true", "1", "yes")
+
+        def _html_retention_days() -> int:
+            raw = os.getenv("HTML_RETENTION_DAYS", "14").strip()
+            try:
+                days = int(raw)
+            except ValueError:
+                return 14
+            return max(7, min(30, days))
+
         return cls(
             environment=environment,  # type: ignore[arg-type]
             log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -73,6 +102,17 @@ class AppConfig:
             redis_url=os.getenv("REDIS_URL"),
             storage_root=os.getenv("STORAGE_ROOT", "./storage"),
             artifacts_dir=os.getenv("ARTIFACTS_DIR", "./artifacts"),
+            domain_lock_ttl_seconds=int(os.getenv("DOMAIN_LOCK_TTL_SECONDS", "300")),
+            domain_lock_max_retries=int(os.getenv("DOMAIN_LOCK_MAX_RETRIES", "3")),
+            domain_lock_backoff_base_ms=int(os.getenv("DOMAIN_LOCK_BACKOFF_BASE_MS", "1000")),
+            domain_min_delay_ms=int(os.getenv("DOMAIN_MIN_DELAY_MS", "2000")),
+            domain_throttle_ttl_seconds=int(os.getenv("DOMAIN_THROTTLE_TTL_SECONDS", "60")),
+            disable_throttle=_bool_env("DISABLE_THROTTLE", False),
+            disable_locks=_bool_env("DISABLE_LOCKS", False),
+            html_retention_days=_html_retention_days(),
+            retention_cleanup_enabled=_bool_env("RETENTION_CLEANUP_ENABLED", False),
+            retention_cleanup_batch_size=int(os.getenv("RETENTION_CLEANUP_BATCH_SIZE", "100")),
+            retention_cleanup_dry_run=_bool_env("RETENTION_CLEANUP_DRY_RUN", False),
         )
 
 

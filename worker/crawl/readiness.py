@@ -31,8 +31,15 @@ async def wait_for_page_ready(
     Returns load_timings dict with timestamps and durations.
     """
     start_time = datetime.now(timezone.utc)
-    timings = {
+    # Fixed key set so homepage and PDP load_timings are identical; soft_timeout always present.
+    timings: dict = {
         "navigation_start": start_time.isoformat(),
+        "network_idle": None,
+        "network_idle_duration_ms": None,
+        "dom_stable": None,
+        "ready": None,
+        "total_load_duration_ms": None,
+        "soft_timeout": False,
     }
 
     try:
@@ -45,7 +52,6 @@ async def wait_for_page_ready(
         ).total_seconds() * 1000
 
         # Wait for DOM stability (1s window with no layout shifts)
-        # Simple approach: wait for a period with no mutations
         await asyncio.sleep(DOM_STABILITY_TIMEOUT / 1000)
         dom_stable_time = datetime.now(timezone.utc)
         timings["dom_stable"] = dom_stable_time.isoformat()
@@ -57,7 +63,7 @@ async def wait_for_page_ready(
         timings["total_load_duration_ms"] = (ready_time - start_time).total_seconds() * 1000
 
     except PlaywrightTimeoutError:
-        # Soft timeout - log warning but continue
+        # Soft timeout: log warning, continue; record timings with unreached milestones as None.
         logger.warning(
             "page_ready_soft_timeout",
             timeout_ms=soft_timeout,
@@ -67,6 +73,14 @@ async def wait_for_page_ready(
         timings["total_load_duration_ms"] = (ready_time - start_time).total_seconds() * 1000
         timings["soft_timeout"] = True
 
+    # Readiness milestone; context (session_id, page_type, viewport, domain) from caller.
+    logger.info(
+        "readiness_complete",
+        network_idle=timings.get("network_idle"),
+        dom_stable=timings.get("dom_stable"),
+        total_load_duration_ms=timings.get("total_load_duration_ms"),
+        soft_timeout=timings["soft_timeout"],
+    )
     return timings
 
 

@@ -7,6 +7,7 @@ No behavior change.
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
 from uuid import UUID
 
 from playwright.async_api import Browser, async_playwright
@@ -38,6 +39,18 @@ from worker.repository import AuditRepository
 logger = get_logger(__name__)
 
 
+def _user_safe_error_summary(exc: BaseException) -> str:
+    """
+    Return a deterministic, user-safe error summary for storage/API.
+
+    No raw exception messages or stack traces. Used for error_summary only;
+    detailed error stays in logs.
+    """
+    if isinstance(exc, PlaywrightTimeoutError):
+        return "Navigation timeout"
+    return "Crawl failed"
+
+
 async def crawl_homepage_viewport(
     browser: Browser,
     url: str,
@@ -53,13 +66,15 @@ async def crawl_homepage_viewport(
 
     Returns (success: bool, page_data: dict with page_id, load_timings, etc.).
     """
+    domain = urlparse(url).netloc or ""
     bind_request_context(
         session_id=str(session_id),
         page_type=page_type,
         viewport=viewport,
+        domain=domain,
     )
 
-    logger.info("crawl_started", url=url, viewport=viewport)
+    logger.info("crawl_started", url=url, viewport=viewport, domain=domain)
 
     page_data = repository.get_page_by_session_type_viewport(session_id, page_type, viewport)
     if not page_data:
@@ -95,14 +110,18 @@ async def crawl_homepage_viewport(
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except PlaywrightTimeoutError as e:
-            error_summary = f"Navigation timeout: {str(e)}"
-            logger.error("navigation_timeout", error=str(e))
+            error_summary = _user_safe_error_summary(e)
+            logger.error(
+                "navigation_timeout",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             repository.create_log(
                 session_id=session_id,
                 level="error",
                 event_type="timeout",
                 message="Navigation timeout",
-                details={"error": str(e)},
+                details={"error": str(e), "error_type": type(e).__name__},
             )
             raise
 
@@ -160,7 +179,11 @@ async def crawl_homepage_viewport(
         except Exception as e:
             screenshot_bytes = None
             screenshot_failed = True
-            logger.warning("screenshot_failed", error=str(e))
+            logger.warning(
+                "screenshot_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         low_confidence, low_confidence_reasons = evaluate_low_confidence(
             has_h1=has_h1,
@@ -190,22 +213,16 @@ async def crawl_homepage_viewport(
             artifacts_saved.append(name)
 
         artifacts_saved.append(
-            save_visible_text(
-                repository, session_id, page_id, page_type, viewport, visible_text
-            )
+            save_visible_text(repository, session_id, page_id, page_type, viewport, visible_text)
         )
         artifacts_saved.append(
-            save_features_json(
-                repository, session_id, page_id, page_type, viewport, features
-            )
+            save_features_json(repository, session_id, page_id, page_type, viewport, features)
         )
 
         if store_html:
             html_content = await page.content()
             artifacts_saved.append(
-                save_html_gz(
-                    repository, session_id, page_id, page_type, viewport, html_content
-                )
+                save_html_gz(repository, session_id, page_id, page_type, viewport, html_content)
             )
 
         repository.update_page(
@@ -224,13 +241,17 @@ async def crawl_homepage_viewport(
         )
 
     except Exception as e:
-        error_summary = str(e)
-        logger.error("crawl_failed", error=str(e), error_type=type(e).__name__)
+        error_summary = _user_safe_error_summary(e)
+        logger.error(
+            "crawl_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         repository.create_log(
             session_id=session_id,
             level="error",
             event_type="error",
-            message=f"Crawl failed: {str(e)}",
+            message="Crawl failed",
             details={"error": str(e), "error_type": type(e).__name__},
         )
         repository.update_page(page_id, status="failed", load_timings=load_timings)
@@ -268,10 +289,12 @@ async def crawl_pdp_viewport(
     Returns (success: bool, page_data: dict with page_id, load_timings, etc.).
     """
     page_type = "pdp"
+    domain = urlparse(pdp_url).netloc or ""
     bind_request_context(
         session_id=str(session_id),
         page_type=page_type,
         viewport=viewport,
+        domain=domain,
     )
 
     logger.info(
@@ -279,6 +302,7 @@ async def crawl_pdp_viewport(
         url=pdp_url,
         viewport=viewport,
         session_id=str(session_id),
+        domain=domain,
     )
     repository.create_log(
         session_id=session_id,
@@ -320,14 +344,19 @@ async def crawl_pdp_viewport(
         try:
             await page.goto(pdp_url, wait_until="domcontentloaded", timeout=30000)
         except PlaywrightTimeoutError as e:
-            error_summary = f"Navigation timeout: {str(e)}"
-            logger.error("pdp_crawl_failed", error=str(e), viewport=viewport)
+            error_summary = _user_safe_error_summary(e)
+            logger.error(
+                "pdp_navigation_timeout",
+                error=str(e),
+                error_type=type(e).__name__,
+                viewport=viewport,
+            )
             repository.create_log(
                 session_id=session_id,
                 level="error",
                 event_type="timeout",
                 message="PDP navigation timeout",
-                details={"error": str(e)},
+                details={"error": str(e), "error_type": type(e).__name__},
             )
             raise
 
@@ -381,7 +410,11 @@ async def crawl_pdp_viewport(
         except Exception as e:
             screenshot_bytes = None
             screenshot_failed = True
-            logger.warning("screenshot_failed", error=str(e))
+            logger.warning(
+                "screenshot_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         low_confidence, low_confidence_reasons = evaluate_low_confidence_pdp(
             has_h1=has_h1,
@@ -418,22 +451,16 @@ async def crawl_pdp_viewport(
             artifacts_saved.append(name)
 
         artifacts_saved.append(
-            save_visible_text(
-                repository, session_id, page_id, page_type, viewport, visible_text
-            )
+            save_visible_text(repository, session_id, page_id, page_type, viewport, visible_text)
         )
         artifacts_saved.append(
-            save_features_json(
-                repository, session_id, page_id, page_type, viewport, features
-            )
+            save_features_json(repository, session_id, page_id, page_type, viewport, features)
         )
 
         if store_html:
             html_content = await page.content()
             artifacts_saved.append(
-                save_html_gz(
-                    repository, session_id, page_id, page_type, viewport, html_content
-                )
+                save_html_gz(repository, session_id, page_id, page_type, viewport, html_content)
             )
 
         repository.update_page(
@@ -452,7 +479,7 @@ async def crawl_pdp_viewport(
         )
 
     except Exception as e:
-        error_summary = str(e)
+        error_summary = _user_safe_error_summary(e)
         logger.error(
             "pdp_crawl_failed",
             error=str(e),
@@ -463,7 +490,7 @@ async def crawl_pdp_viewport(
             session_id=session_id,
             level="error",
             event_type="error",
-            message=f"PDP crawl failed: {str(e)}",
+            message="PDP crawl failed",
             details={"error": str(e), "error_type": type(e).__name__},
         )
         repository.update_page(page_id, status="failed", load_timings=load_timings)

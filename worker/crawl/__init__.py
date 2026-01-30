@@ -35,6 +35,7 @@ from worker.crawl.pdp_candidates import (
     extract_pdp_candidate_links,
     filter_pdp_candidate_urls,
     filter_product_context_urls,
+    get_etld_plus_one,
     is_pdp_candidate_path,
     normalize_internal_url,
 )
@@ -71,6 +72,7 @@ __all__ = [
     # pdp_candidates
     "is_pdp_candidate_path",
     "_path_has_excluded_segment",
+    "get_etld_plus_one",
     "normalize_internal_url",
     "filter_pdp_candidate_urls",
     "filter_product_context_urls",

@@ -6,6 +6,12 @@ requires-python = ">=3.11"
 readme = "README.md"
 authors = [{ name = "AI Website Audit" }]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-asyncio>=0.23.0,<0.24.0",
+]
+
 [build-system]
 requires = ["setuptools>=69.0", "wheel"]
 build-backend = "setuptools.build_meta"
