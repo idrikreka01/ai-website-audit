@@ -20,7 +20,7 @@ VIEWPORT_CONFIGS = {
 NETWORK_IDLE_TIMEOUT = 800  # Network idle window
 DOM_STABILITY_TIMEOUT = 1000  # DOM stability window
 MINIMUM_WAIT_AFTER_LOAD = 500  # Minimum wait after load
-CONSENT_POSITIONING_DELAY_MS = 800  # Wait for consent banner to position (e.g. bottom) before dismiss
+CONSENT_POSITIONING_DELAY_MS = 800  # Wait for consent banner to position before dismiss
 HARD_TIMEOUT_MS = 30000  # Hard timeout cap per page
 SCROLL_WAIT = 500  # Wait after each scroll
 

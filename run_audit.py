@@ -6,6 +6,7 @@ import urllib.request
 
 ENDPOINT = "http://localhost:8000/audits"
 
+
 def main() -> None:
     url = input("Enter URL: ").strip()
     if not url:
@@ -39,6 +40,7 @@ def main() -> None:
     except urllib.error.URLError as e:
         print(f"Request failed: {e.reason}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
