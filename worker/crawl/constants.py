@@ -125,7 +125,7 @@ COOKIE_CONSENT_SELECTORS = [
     'button:has-text("Tout accepter")',
     'button:has-text("Accepter")',
     'button:has-text("Accepter tout")',
-    "button:has-text(\"J'accepte\")",
+    'button:has-text("J\'accepte")',
     'button:has-text("Aceptar todo")',
     'button:has-text("Aceptar")',
     'button:has-text("Aceptar todas")',
@@ -220,9 +220,6 @@ COOKIE_CONSENT_SELECTORS = [
     '[id*="cookie"] a',
     '[class*="cookie"] button',
     '[class*="cookie"] a',
-    '#accept-cookies',
-    '.js-cookie-accept-all-button button',
-    '.cookie-permission-actions button',
     '[id*="consent"] button',
     '[id*="consent"] a',
     '[class*="consent"] button',
@@ -316,6 +313,23 @@ POPUP_CATEGORY_ORDER = ("cookie", "newsletter", "modal", "age_gate", "geo")
 # Overlay-first order: dialog/banner (modal) before cookie/newsletter (§5 detection layers)
 POPUP_CATEGORY_ORDER_OVERLAY_FIRST = ("modal", "cookie", "newsletter", "age_gate", "geo")
 
+# Container selectors used to ensure dismiss clicks happen inside known consent/pop-up containers.
+POPUP_CONTAINER_SELECTORS = (
+    ".offcanvas-cookie",
+    ".cookie-permission",
+    "[id*='cookie']",
+    "[class*='cookie']",
+    "[id*='consent']",
+    "[class*='consent']",
+    "[class*='gdpr']",
+    "[class*='ccpa']",
+    "[class*='banner']",
+    "[class*='popup']",
+    "[class*='modal']",
+    "[role='dialog']",
+    ".offcanvas",
+)
+
 # Bounded attempts per pass (max dismissals per pass; deterministic timing)
 MAX_DISMISSALS_PER_PASS = 5
 POPUP_VISIBILITY_TIMEOUT_MS = 1000
@@ -324,7 +338,7 @@ POPUP_SETTLE_AFTER_DISMISS_MS = 200
 
 # Safe dismiss keywords (button/link text); minimal set for deterministic matching.
 # Only elements whose normalized text matches one of these are considered safe to click.
-# Include "got it", "continue", and close symbols so selectors like button:has-text("Continue") succeed.
+# Include got it, continue, ×, ✕ so selectors for those buttons succeed.
 SAFE_DISMISS_KEYWORDS = frozenset(
     [
         "accept",
@@ -339,7 +353,6 @@ SAFE_DISMISS_KEYWORDS = frozenset(
         "maybe later",
         "no thanks",
         "ok",
-        "prano të gjitha cookies",
         "×",  # multiplication sign, common close icon
         "✕",  # ballot x, common close icon
     ]

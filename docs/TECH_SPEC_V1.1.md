@@ -11,13 +11,15 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 0) Crawl policy version
 
-- **crawl_policy_version**: `v1.6` (popup handling policy: detection layers, safe-click rules, two-pass flow, logging; see §5).
+- **crawl_policy_version**: `v1.8` (pre-consent vendors expanded; see §5).
 - **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
 - **v1.2**: PDP validation requires (price + title+image) plus at least one strong product signal (add-to-cart OR product schema).
 - **v1.3**: Navigation retry policy: attempts, backoff, timeouts, retryable classes, and bot-block detection with single mitigation retry (§5).
 - **v1.4**: Retryable classes include HTTP 429 (rate-limit); logging reason `status_429`.
 - **v1.5**: Artifact paths include a readable domain suffix for storage layout (§4).
 - **v1.6**: Popup handling policy: categories, detection layers, safe-click order, max two passes per page, structured popup logging, failure handling (§5).
+- **v1.7**: Pre-consent injection: vendor-level scripts + iframe application; logged as popup events (§5).
+- **v1.8**: Pre-consent vendors expanded beyond OneTrust/Shopware (best-effort vendor DOM scripts).
 
 ---
 
@@ -62,7 +64,7 @@ This document is the authoritative, merged specification. It includes all conten
   - retention_policy (standard | short | long)
   - attempts (integer)
   - final_url (after redirects)
-  - crawl_policy_version (e.g., v1.6; PDP-not-found → partial; retry policy §5; popup policy §5)
+  - crawl_policy_version (e.g., v1.8; PDP-not-found → partial; retry policy §5; popup policy §5)
   - error_summary (nullable)
   - config_snapshot (frozen crawl policy config for this run)
   - low_confidence (boolean)
@@ -195,6 +197,14 @@ This document is the authoritative, merged specification. It includes all conten
     - For every popup-related event, log: `event_type: popup`; `selector` (or selector family); `action` (e.g. dismiss_click, detected_ignored, not_found); `result` (success, failure, skipped); and page context (session_id, page_type, viewport, url or page identifier).
   - **Failure handling**
     - If a safe-click fails (element not found, not clickable, timeout): log and continue; do not fail the page. If overlays remain after both passes, log and continue with evidence capture. Page success is not conditional on popup dismissal.
+  - **Pre-consent injection** (v1.7)
+    - **Goal**: Suppress vendor-managed consent panels before UI renders.
+    - **Vendors**: Apply known vendor scripts (initially OneTrust + Shopware-style off-canvas consent).
+    - **Timing**:
+      - **Before navigation**: add init scripts to the browser context so they execute on every new document.
+      - **After navigation**: apply the same scripts in the main document and all iframes to handle iframe-based consent panels.
+    - **Determinism**: No random delays; bounded scripts only.
+    - **Logging**: Log a popup event with vendor list, frame count, and phase (init vs. post-nav). Failures are logged but non-fatal.
 
 - **Navigation retry policy** (deterministic; v1.4)
   - **Attempts**: Max 3 navigation attempts per page load. Attempt 1 = initial goto; attempts 2–3 = retries after backoff.

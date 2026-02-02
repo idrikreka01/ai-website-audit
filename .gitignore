@@ -23,6 +23,9 @@ ENV/
 artifacts/
 storage/
 
+# Local tools
+tools/popup_debug.py
+
 # Logs
 *.log
 

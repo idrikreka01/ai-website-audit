@@ -11,6 +11,11 @@ Public API: re-exports all symbols used by jobs.py and tests so that
 from __future__ import annotations
 
 from worker.crawl.browser import create_browser_context
+from worker.crawl.consent import (
+    DEFAULT_VENDORS,
+    add_preconsent_init_scripts,
+    apply_preconsent_in_frames,
+)
 from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
     EXCLUDED_PATH_SEGMENTS,
@@ -68,6 +73,10 @@ __all__ = [
     "PRODUCT_LIKE_CONTAINER_SELECTORS",
     # browser
     "create_browser_context",
+    # consent
+    "DEFAULT_VENDORS",
+    "add_preconsent_init_scripts",
+    "apply_preconsent_in_frames",
     # navigation_retry
     "NavigateResult",
     "navigate_with_retry",

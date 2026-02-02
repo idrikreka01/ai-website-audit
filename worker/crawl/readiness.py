@@ -20,6 +20,7 @@ from worker.crawl.constants import (
     MAX_DISMISSALS_PER_PASS,
     MINIMUM_WAIT_AFTER_LOAD,
     POPUP_CLICK_TIMEOUT_MS,
+    POPUP_CONTAINER_SELECTORS,
     POPUP_SETTLE_AFTER_DISMISS_MS,
     POPUP_VISIBILITY_TIMEOUT_MS,
     SCROLL_WAIT,
@@ -144,6 +145,7 @@ def _popup_event(
     result: str,
     attempt: int,
     timestamp: str | None = None,
+    current_url: str | None = None,
 ) -> dict:
     """Build a popup event dict for DB logging (selector, action, result, attempt)."""
     out: dict = {
@@ -154,7 +156,20 @@ def _popup_event(
     }
     if timestamp is not None:
         out["timestamp"] = timestamp
+    if current_url is not None:
+        out["current_url"] = current_url
     return out
+
+
+async def _is_within_popup_container(element: Locator) -> bool:
+    """Return True if element is inside a known consent/popup container."""
+    if not POPUP_CONTAINER_SELECTORS:
+        return True
+    selector = ", ".join(POPUP_CONTAINER_SELECTORS)
+    try:
+        return await element.evaluate("(el, sel) => !!el.closest(sel)", selector)
+    except Exception:
+        return False
 
 
 async def dismiss_popups(page: Page) -> list[dict]:
@@ -208,16 +223,42 @@ async def dismiss_popups(page: Page) -> list[dict]:
                         _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
                     )
                     continue
+                if not await _is_within_popup_container(element):
+                    logger.debug(
+                        "popup_skipped",
+                        selector=selector,
+                        reason="outside_container",
+                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
+                    )
+                    events.append(
+                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
+                    )
+                    continue
                 await element.click(timeout=POPUP_CLICK_TIMEOUT_MS)
                 ts = datetime.now(timezone.utc).isoformat()
                 events.append(
-                    _popup_event(selector, "dismiss_click", "success", attempt_one_based, ts)
+                    _popup_event(
+                        selector,
+                        "dismiss_click",
+                        "success",
+                        attempt_one_based,
+                        ts,
+                        page.url,
+                    )
                 )
                 dismissed_count += 1
                 logger.debug("popup_dismissed", selector=selector)
                 await asyncio.sleep(POPUP_SETTLE_AFTER_DISMISS_MS / 1000)
             except Exception:
-                events.append(_popup_event(selector, "dismiss_click", "failure", attempt_one_based))
+                events.append(
+                    _popup_event(
+                        selector,
+                        "dismiss_click",
+                        "failure",
+                        attempt_one_based,
+                        current_url=page.url,
+                    )
+                )
                 logger.debug("popup_click_failed", selector=selector)
     except Exception as e:
         logger.warning("popup_pass_error", error=str(e), error_type=type(e).__name__)

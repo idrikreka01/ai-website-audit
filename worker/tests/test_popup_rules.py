@@ -99,7 +99,6 @@ def test_default_category_order():
         "allow all",
         "dismiss",
         "agree",
-        "Prano të gjitha cookies",
         "Got it",
         "Continue",
         "×",

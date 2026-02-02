@@ -22,7 +22,10 @@ from worker.artifacts import (
 )
 from worker.constants import HOMEPAGE_VIEWPORTS, PDP_VIEWPORTS
 from worker.crawl import (
+    DEFAULT_VENDORS,
     MAX_PDP_CANDIDATES,
+    add_preconsent_init_scripts,
+    apply_preconsent_in_frames,
     create_browser_context,
     dismiss_popups,
     extract_features_json,
@@ -127,6 +130,21 @@ async def crawl_homepage_viewport(
 
     try:
         context = await create_browser_context(browser, viewport)
+        try:
+            vendors = await add_preconsent_init_scripts(context, DEFAULT_VENDORS)
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message="Preconsent init scripts added",
+                details={"vendors": vendors, "phase": "init"},
+            )
+        except Exception as e:
+            logger.warning(
+                "preconsent_init_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         page = await context.new_page()
 
         repository.create_log(
@@ -161,6 +179,26 @@ async def crawl_homepage_viewport(
                 domain=domain,
             )
             raise RuntimeError(error_summary)
+
+        try:
+            result = await apply_preconsent_in_frames(page, DEFAULT_VENDORS)
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message="Preconsent applied (post-nav)",
+                details={
+                    "vendors": result.get("applied_vendors", []),
+                    "frame_count": result.get("frame_count", 0),
+                    "phase": "post-nav",
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                "preconsent_post_nav_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         load_timings = await wait_for_page_ready(page, soft_timeout=10000)
         repository.create_log(
@@ -404,6 +442,21 @@ async def crawl_pdp_viewport(
 
     try:
         context = await create_browser_context(browser, viewport)
+        try:
+            vendors = await add_preconsent_init_scripts(context, DEFAULT_VENDORS)
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message="Preconsent init scripts added",
+                details={"vendors": vendors, "phase": "init"},
+            )
+        except Exception as e:
+            logger.warning(
+                "preconsent_init_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
         page = await context.new_page()
 
         repository.create_log(
@@ -437,6 +490,26 @@ async def crawl_pdp_viewport(
                 domain=domain,
             )
             raise RuntimeError(error_summary)
+
+        try:
+            result = await apply_preconsent_in_frames(page, DEFAULT_VENDORS)
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message="Preconsent applied (post-nav)",
+                details={
+                    "vendors": result.get("applied_vendors", []),
+                    "frame_count": result.get("frame_count", 0),
+                    "phase": "post-nav",
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                "preconsent_post_nav_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         load_timings = await wait_for_page_ready(page, soft_timeout=10000)
         repository.create_log(

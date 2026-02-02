@@ -205,6 +205,7 @@ async def test_dismiss_popups_success():
     locator_mock.first.is_visible = AsyncMock(return_value=True)
     locator_mock.first.inner_text = AsyncMock(return_value="Accept")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
 
     page.locator = MagicMock(return_value=locator_mock)
@@ -250,6 +251,7 @@ async def test_dismiss_popups_continues_on_error():
     locator_success.first.is_visible = AsyncMock(return_value=True)
     locator_success.first.inner_text = AsyncMock(return_value="Accept")
     locator_success.first.get_attribute = AsyncMock(return_value=None)
+    locator_success.first.evaluate = AsyncMock(return_value=True)
     locator_success.first.click = AsyncMock()
 
     page.locator = MagicMock(side_effect=[locator_error, locator_success])
@@ -272,6 +274,7 @@ async def test_dismiss_popups_logs_selector_and_timestamp():
     locator_mock.first.is_visible = AsyncMock(side_effect=[True] + [False] * 20)
     locator_mock.first.inner_text = AsyncMock(return_value="Accept")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
 
     page.locator = MagicMock(return_value=locator_mock)
@@ -300,6 +303,7 @@ async def test_dismiss_popups_skips_risky_cta():
     locator_mock.first.is_visible = AsyncMock(return_value=True)
     locator_mock.first.inner_text = AsyncMock(return_value="Buy now")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
 
     page.locator = MagicMock(return_value=locator_mock)
@@ -321,6 +325,7 @@ async def test_dismiss_popups_skips_non_safe_dismiss_text():
     locator_mock.first.is_visible = AsyncMock(return_value=True)
     locator_mock.first.inner_text = AsyncMock(return_value="Learn more")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
 
     page.locator = MagicMock(return_value=locator_mock)
@@ -342,6 +347,7 @@ async def test_dismiss_popups_max_dismissals_per_pass():
     locator_mock.first.is_visible = AsyncMock(return_value=True)
     locator_mock.first.inner_text = AsyncMock(return_value="Accept")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
     page.locator = MagicMock(return_value=locator_mock)
 
@@ -361,6 +367,7 @@ async def test_dismiss_popups_attempt_numbers_sequential():
     locator_mock.first.is_visible = AsyncMock(return_value=True)
     locator_mock.first.inner_text = AsyncMock(return_value="Accept")
     locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
     locator_mock.first.click = AsyncMock()
     page.locator = MagicMock(return_value=locator_mock)
 
