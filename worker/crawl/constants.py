@@ -20,6 +20,7 @@ VIEWPORT_CONFIGS = {
 NETWORK_IDLE_TIMEOUT = 800  # Network idle window
 DOM_STABILITY_TIMEOUT = 1000  # DOM stability window
 MINIMUM_WAIT_AFTER_LOAD = 500  # Minimum wait after load
+CONSENT_POSITIONING_DELAY_MS = 800  # Wait for consent banner to position (e.g. bottom) before dismiss
 HARD_TIMEOUT_MS = 30000  # Hard timeout cap per page
 SCROLL_WAIT = 500  # Wait after each scroll
 
@@ -129,6 +130,11 @@ COOKIE_CONSENT_SELECTORS = [
     'button:has-text("Aceptar todo")',
     'button:has-text("Aceptar")',
     'button:has-text("Aceptar todas")',
+    'button:has-text("Permitirlas todas")',
+    'button:has-text("Permitir todas")',
+    'button:has-text("Confirmar mis preferencias")',
+    'button:has-text("Gestionar las preferencias de consentimiento")',
+    'button:has-text("Centro de preferencia de la privacidad")',
     'button:has-text("Accetta tutto")',
     'button:has-text("Accetta")',
     'button:has-text("Aceitar todos")',
@@ -346,13 +352,17 @@ SAFE_DISMISS_KEYWORDS = frozenset(
         "agree",
         "allow all",
         "close",
+        "confirmar mis preferencias",
         "continue",
         "dismiss",
         "got it",
+        "gestionar las preferencias de consentimiento",
         "i accept",
         "maybe later",
         "no thanks",
         "ok",
+        "permitir todas",
+        "permitirlas todas",
         "×",  # multiplication sign, common close icon
         "✕",  # ballot x, common close icon
     ]

@@ -7,6 +7,7 @@ No behavior change.
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -22,6 +23,7 @@ from worker.artifacts import (
 )
 from worker.constants import HOMEPAGE_VIEWPORTS, PDP_VIEWPORTS
 from worker.crawl import (
+    CONSENT_POSITIONING_DELAY_MS,
     DEFAULT_VENDORS,
     MAX_PDP_CANDIDATES,
     add_preconsent_init_scripts,
@@ -209,6 +211,7 @@ async def crawl_homepage_viewport(
             details=load_timings,
         )
 
+        await asyncio.sleep(CONSENT_POSITIONING_DELAY_MS / 1000)
         popup_events = await dismiss_popups(page)
         _log_popup_events(
             repository, session_id, page_type, viewport, domain, popup_events, post_scroll=False
@@ -520,6 +523,7 @@ async def crawl_pdp_viewport(
             details=load_timings,
         )
 
+        await asyncio.sleep(CONSENT_POSITIONING_DELAY_MS / 1000)
         popup_events = await dismiss_popups(page)
         _log_popup_events(
             repository, session_id, page_type, viewport, domain, popup_events, post_scroll=False

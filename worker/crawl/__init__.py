@@ -17,6 +17,7 @@ from worker.crawl.consent import (
     apply_preconsent_in_frames,
 )
 from worker.crawl.constants import (
+    CONSENT_POSITIONING_DELAY_MS,
     DOM_STABILITY_TIMEOUT,
     EXCLUDED_PATH_SEGMENTS,
     HARD_TIMEOUT_MS,
@@ -65,6 +66,7 @@ __all__ = [
     "NETWORK_IDLE_TIMEOUT",
     "DOM_STABILITY_TIMEOUT",
     "MINIMUM_WAIT_AFTER_LOAD",
+    "CONSENT_POSITIONING_DELAY_MS",
     "HARD_TIMEOUT_MS",
     "SCROLL_WAIT",
     "EXCLUDED_PATH_SEGMENTS",
