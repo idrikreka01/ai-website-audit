@@ -52,6 +52,7 @@ def save_screenshot(
     page_id: UUID,
     page_type: str,
     viewport: str,
+    domain: str,
     screenshot_bytes: bytes | None,
 ) -> Optional[str]:
     """
@@ -61,7 +62,7 @@ def save_screenshot(
     if not screenshot_bytes:
         return None
     try:
-        path = build_artifact_path(session_id, page_type, viewport, "screenshot")
+        path = build_artifact_path(session_id, page_type, viewport, "screenshot", domain)
         size, checksum = write_screenshot(path, screenshot_bytes)
         storage_uri = get_storage_uri(path)
     except Exception as e:
@@ -117,11 +118,12 @@ def save_visible_text(
     page_id: UUID,
     page_type: str,
     viewport: str,
+    domain: str,
     visible_text: str,
 ) -> Optional[str]:
     """Write visible text to storage; create artifact only on success."""
     try:
-        path = build_artifact_path(session_id, page_type, viewport, "visible_text")
+        path = build_artifact_path(session_id, page_type, viewport, "visible_text", domain)
         size, checksum = write_text(path, visible_text)
         storage_uri = get_storage_uri(path)
     except Exception as e:
@@ -177,11 +179,12 @@ def save_features_json(
     page_id: UUID,
     page_type: str,
     viewport: str,
+    domain: str,
     features: dict,
 ) -> Optional[str]:
     """Write features JSON to storage; create artifact only on success."""
     try:
-        path = build_artifact_path(session_id, page_type, viewport, "features_json")
+        path = build_artifact_path(session_id, page_type, viewport, "features_json", domain)
         size, checksum = write_json(path, features)
         storage_uri = get_storage_uri(path)
     except Exception as e:
@@ -237,11 +240,12 @@ def save_html_gz(
     page_id: UUID,
     page_type: str,
     viewport: str,
+    domain: str,
     html_content: str,
 ) -> Optional[str]:
     """Write HTML (gzip) to storage; create artifact only on success. Returns "html_gz" or None."""
     try:
-        path = build_artifact_path(session_id, page_type, viewport, "html_gz")
+        path = build_artifact_path(session_id, page_type, viewport, "html_gz", domain)
         size, checksum = write_html_gz(path, html_content)
         storage_uri = get_storage_uri(path)
     except Exception as e:

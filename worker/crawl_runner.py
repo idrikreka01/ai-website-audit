@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from playwright.async_api import Browser, async_playwright
-from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from shared.logging import bind_request_context, get_logger
 from worker.artifacts import (
@@ -29,26 +28,57 @@ from worker.crawl import (
     extract_features_json,
     extract_features_json_pdp,
     extract_pdp_candidate_links,
+    navigate_with_retry,
     normalize_whitespace,
     scroll_sequence,
     wait_for_page_ready,
 )
+from worker.error_summary import get_user_safe_error_summary
 from worker.low_confidence import evaluate_low_confidence, evaluate_low_confidence_pdp
 from worker.repository import AuditRepository
 
 logger = get_logger(__name__)
 
 
-def _user_safe_error_summary(exc: BaseException) -> str:
+def _log_popup_events(
+    repository: AuditRepository,
+    session_id: UUID,
+    page_type: str,
+    viewport: str,
+    domain: str,
+    events: list[dict],
+    post_scroll: bool = False,
+) -> None:
     """
-    Return a deterministic, user-safe error summary for storage/API.
-
-    No raw exception messages or stack traces. Used for error_summary only;
-    detailed error stays in logs.
+    Write DB logs for each popup event with selector, action, result, attempt, and context.
+    Failures are logged at warn level; non-fatal.
     """
-    if isinstance(exc, PlaywrightTimeoutError):
-        return "Navigation timeout"
-    return "Crawl failed"
+    suffix = " (post-scroll)" if post_scroll else ""
+    for ev in events:
+        selector = ev.get("selector", "")
+        action = ev.get("action", "")
+        result = ev.get("result", "")
+        attempt = ev.get("attempt", 0)
+        level = "warn" if result == "failure" else "info"
+        message = f"Popup {action} {result}{suffix}"
+        details = {
+            "selector": selector,
+            "action": action,
+            "result": result,
+            "attempt": attempt,
+            "page_type": page_type,
+            "viewport": viewport,
+            "domain": domain,
+        }
+        if ev.get("timestamp"):
+            details["timestamp"] = ev["timestamp"]
+        repository.create_log(
+            session_id=session_id,
+            level=level,
+            event_type="popup",
+            message=message,
+            details=details,
+        )
 
 
 async def crawl_homepage_viewport(
@@ -103,27 +133,34 @@ async def crawl_homepage_viewport(
             session_id=session_id,
             level="info",
             event_type="navigation",
-            message=f"Navigating to {url}",
-            details={"url": url, "viewport": viewport},
+            message="Navigating to URL",
+            details={
+                "url": url,
+                "viewport": viewport,
+                "page_type": page_type,
+                "domain": domain,
+            },
         )
 
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        except PlaywrightTimeoutError as e:
-            error_summary = _user_safe_error_summary(e)
+        nav_result = await navigate_with_retry(
+            page,
+            url,
+            session_id=session_id,
+            repository=repository,
+            page_type=page_type,
+            viewport=viewport,
+            domain=domain,
+        )
+        if not nav_result.success:
+            error_summary = nav_result.error_summary or "Navigation failed"
             logger.error(
-                "navigation_timeout",
-                error=str(e),
-                error_type=type(e).__name__,
+                "navigation.failed",
+                error_summary=error_summary,
+                url=url,
+                viewport=viewport,
+                domain=domain,
             )
-            repository.create_log(
-                session_id=session_id,
-                level="error",
-                event_type="timeout",
-                message="Navigation timeout",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-            raise
+            raise RuntimeError(error_summary)
 
         load_timings = await wait_for_page_ready(page, soft_timeout=10000)
         repository.create_log(
@@ -134,14 +171,23 @@ async def crawl_homepage_viewport(
             details=load_timings,
         )
 
-        dismissed = await dismiss_popups(page)
-        if dismissed:
+        popup_events = await dismiss_popups(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, popup_events, post_scroll=False
+        )
+        success_count = sum(1 for e in popup_events if e.get("result") == "success")
+        if success_count:
             repository.create_log(
                 session_id=session_id,
                 level="info",
                 event_type="popup",
-                message=f"Dismissed {len(dismissed)} popups",
-                details={"dismissed": dismissed},
+                message=f"Dismissed {success_count} popups",
+                details={
+                    "dismissed_count": success_count,
+                    "page_type": page_type,
+                    "viewport": viewport,
+                    "domain": domain,
+                },
             )
 
         await scroll_sequence(page)
@@ -151,6 +197,26 @@ async def crawl_homepage_viewport(
             event_type="navigation",
             message="Scroll sequence completed",
         )
+
+        # Pass 2: popup dismissal after scroll (TECH_SPEC §5 two-pass flow)
+        popup_events_2 = await dismiss_popups(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, popup_events_2, post_scroll=True
+        )
+        success_count_2 = sum(1 for e in popup_events_2 if e.get("result") == "success")
+        if success_count_2:
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message=f"Dismissed {success_count_2} popups (post-scroll)",
+                details={
+                    "dismissed_count": success_count_2,
+                    "page_type": page_type,
+                    "viewport": viewport,
+                    "domain": domain,
+                },
+            )
 
         if page_type == "homepage" and viewport == "desktop":
             pdp_candidate_urls = await extract_pdp_candidate_links(
@@ -207,22 +273,28 @@ async def crawl_homepage_viewport(
         artifacts_saved = []
 
         name = save_screenshot(
-            repository, session_id, page_id, page_type, viewport, screenshot_bytes
+            repository, session_id, page_id, page_type, viewport, domain, screenshot_bytes
         )
         if name:
             artifacts_saved.append(name)
 
         artifacts_saved.append(
-            save_visible_text(repository, session_id, page_id, page_type, viewport, visible_text)
+            save_visible_text(
+                repository, session_id, page_id, page_type, viewport, domain, visible_text
+            )
         )
         artifacts_saved.append(
-            save_features_json(repository, session_id, page_id, page_type, viewport, features)
+            save_features_json(
+                repository, session_id, page_id, page_type, viewport, domain, features
+            )
         )
 
         if store_html:
             html_content = await page.content()
             artifacts_saved.append(
-                save_html_gz(repository, session_id, page_id, page_type, viewport, html_content)
+                save_html_gz(
+                    repository, session_id, page_id, page_type, viewport, domain, html_content
+                )
             )
 
         repository.update_page(
@@ -241,7 +313,7 @@ async def crawl_homepage_viewport(
         )
 
     except Exception as e:
-        error_summary = _user_safe_error_summary(e)
+        error_summary = get_user_safe_error_summary(e)
         logger.error(
             "crawl_failed",
             error=str(e),
@@ -338,27 +410,33 @@ async def crawl_pdp_viewport(
             session_id=session_id,
             level="info",
             event_type="navigation",
-            message=f"Navigating to PDP {pdp_url}",
-            details={"url": pdp_url, "viewport": viewport},
+            message="Navigating to PDP",
+            details={
+                "url": pdp_url,
+                "viewport": viewport,
+                "page_type": "pdp",
+                "domain": domain,
+            },
         )
-        try:
-            await page.goto(pdp_url, wait_until="domcontentloaded", timeout=30000)
-        except PlaywrightTimeoutError as e:
-            error_summary = _user_safe_error_summary(e)
+        nav_result = await navigate_with_retry(
+            page,
+            pdp_url,
+            session_id=session_id,
+            repository=repository,
+            page_type="pdp",
+            viewport=viewport,
+            domain=domain,
+        )
+        if not nav_result.success:
+            error_summary = nav_result.error_summary or "PDP navigation failed"
             logger.error(
-                "pdp_navigation_timeout",
-                error=str(e),
-                error_type=type(e).__name__,
+                "navigation.failed",
+                error_summary=error_summary,
+                url=pdp_url,
                 viewport=viewport,
+                domain=domain,
             )
-            repository.create_log(
-                session_id=session_id,
-                level="error",
-                event_type="timeout",
-                message="PDP navigation timeout",
-                details={"error": str(e), "error_type": type(e).__name__},
-            )
-            raise
+            raise RuntimeError(error_summary)
 
         load_timings = await wait_for_page_ready(page, soft_timeout=10000)
         repository.create_log(
@@ -369,14 +447,23 @@ async def crawl_pdp_viewport(
             details=load_timings,
         )
 
-        dismissed = await dismiss_popups(page)
-        if dismissed:
+        popup_events = await dismiss_popups(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, popup_events, post_scroll=False
+        )
+        success_count = sum(1 for e in popup_events if e.get("result") == "success")
+        if success_count:
             repository.create_log(
                 session_id=session_id,
                 level="info",
                 event_type="popup",
-                message="Popup dismissed",
-                details={"dismissed": dismissed},
+                message=f"Dismissed {success_count} popups",
+                details={
+                    "dismissed_count": success_count,
+                    "page_type": page_type,
+                    "viewport": viewport,
+                    "domain": domain,
+                },
             )
 
         await scroll_sequence(page)
@@ -386,6 +473,26 @@ async def crawl_pdp_viewport(
             event_type="navigation",
             message="Scroll sequence completed",
         )
+
+        # Pass 2: popup dismissal after scroll (TECH_SPEC §5 two-pass flow)
+        popup_events_2 = await dismiss_popups(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, popup_events_2, post_scroll=True
+        )
+        success_count_2 = sum(1 for e in popup_events_2 if e.get("result") == "success")
+        if success_count_2:
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="popup",
+                message=f"Dismissed {success_count_2} popups (post-scroll)",
+                details={
+                    "dismissed_count": success_count_2,
+                    "page_type": page_type,
+                    "viewport": viewport,
+                    "domain": domain,
+                },
+            )
 
         visible_text = await page.inner_text("body")
         visible_text = normalize_whitespace(visible_text)
@@ -445,22 +552,28 @@ async def crawl_pdp_viewport(
         artifacts_saved: list[str] = []
 
         name = save_screenshot(
-            repository, session_id, page_id, page_type, viewport, screenshot_bytes
+            repository, session_id, page_id, page_type, viewport, domain, screenshot_bytes
         )
         if name:
             artifacts_saved.append(name)
 
         artifacts_saved.append(
-            save_visible_text(repository, session_id, page_id, page_type, viewport, visible_text)
+            save_visible_text(
+                repository, session_id, page_id, page_type, viewport, domain, visible_text
+            )
         )
         artifacts_saved.append(
-            save_features_json(repository, session_id, page_id, page_type, viewport, features)
+            save_features_json(
+                repository, session_id, page_id, page_type, viewport, domain, features
+            )
         )
 
         if store_html:
             html_content = await page.content()
             artifacts_saved.append(
-                save_html_gz(repository, session_id, page_id, page_type, viewport, html_content)
+                save_html_gz(
+                    repository, session_id, page_id, page_type, viewport, domain, html_content
+                )
             )
 
         repository.update_page(
@@ -479,7 +592,7 @@ async def crawl_pdp_viewport(
         )
 
     except Exception as e:
-        error_summary = _user_safe_error_summary(e)
+        error_summary = get_user_safe_error_summary(e)
         logger.error(
             "pdp_crawl_failed",
             error=str(e),

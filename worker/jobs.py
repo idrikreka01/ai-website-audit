@@ -16,6 +16,7 @@ from rq import get_current_connection
 from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
 from worker.db import get_db_session
+from worker.error_summary import get_user_safe_error_summary
 from worker.locking import (
     DomainLockTimeoutError,
     acquire_domain_lock,
@@ -90,12 +91,16 @@ def process_audit_job(session_id: str, url: str) -> None:
             run_audit_session(url, session_uuid, repository)
         except Exception as e:
             logger.error("audit_job_error", error=str(e), error_type=type(e).__name__)
-            repository.update_session_status(session_uuid, "failed", error_summary=str(e))
+            repository.update_session_status(
+                session_uuid,
+                "failed",
+                error_summary=get_user_safe_error_summary(e, fallback="Audit failed"),
+            )
             repository.create_log(
                 session_id=session_uuid,
                 level="error",
                 event_type="error",
-                message=f"Audit job failed: {str(e)}",
+                message="Audit job failed",
                 details={"error": str(e), "error_type": type(e).__name__},
             )
             raise

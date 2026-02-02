@@ -30,6 +30,11 @@ from worker.crawl.features import (
     extract_features_json_pdp,
     parse_product_ldjson,
 )
+from worker.crawl.navigation_retry import (
+    NavigateResult,
+    is_bot_block_page,
+    navigate_with_retry,
+)
 from worker.crawl.pdp_candidates import (
     _path_has_excluded_segment,
     extract_pdp_candidate_links,
@@ -63,6 +68,10 @@ __all__ = [
     "PRODUCT_LIKE_CONTAINER_SELECTORS",
     # browser
     "create_browser_context",
+    # navigation_retry
+    "NavigateResult",
+    "navigate_with_retry",
+    "is_bot_block_page",
     # readiness
     "wait_for_page_ready",
     "scroll_sequence",

@@ -29,11 +29,12 @@ def build_artifact_path(
     page_type: PageType,
     viewport: Viewport,
     artifact_type: ArtifactType,
+    domain: str,
 ) -> Path:
     """
     Build the artifact file path per naming convention.
 
-    Convention: {session_id}/{page_type}/{viewport}/{artifact_type}.{ext}
+    Convention: {session_id}__{domain}/{page_type}/{viewport}/{artifact_type}.{ext}
 
     Artifacts at the same path are overwritten deterministically (no skip-if-exists).
     Returns a Path object (does not create the file or directory).
@@ -50,9 +51,19 @@ def build_artifact_path(
     }
     ext = ext_map[artifact_type]
 
-    path = artifacts_root / str(session_id) / page_type / viewport / f"{artifact_type}.{ext}"
+    normalized_domain = _normalize_domain(domain)
+    root_name = f"{session_id}__{normalized_domain}"
+    path = artifacts_root / root_name / page_type / viewport / f"{artifact_type}.{ext}"
 
     return path
+
+
+def _normalize_domain(domain: str) -> str:
+    """Normalize domain: lowercase and strip leading www."""
+    value = (domain or "").strip().lower()
+    if value.startswith("www."):
+        value = value[4:]
+    return value or "unknown-domain"
 
 
 def ensure_artifact_dir(path: Path) -> None:

@@ -19,6 +19,7 @@ from worker.crawl import (
     create_browser_context,
     extract_pdp_validation_signals,
     is_valid_pdp_page,
+    navigate_with_retry,
     wait_for_page_ready,
 )
 from worker.repository import AuditRepository
@@ -55,6 +56,7 @@ async def run_pdp_discovery_and_validation(
     bind_request_context(
         session_id=str(session_id),
         page_type="pdp",
+        viewport="desktop",
         domain=domain,
     )
     if not candidate_urls:
@@ -69,7 +71,27 @@ async def run_pdp_discovery_and_validation(
                 page = await context.new_page()
                 try:
                     t0 = time.monotonic()
-                    await page.goto(pdp_url, wait_until="domcontentloaded", timeout=15000)
+                    nav_result = await navigate_with_retry(
+                        page,
+                        pdp_url,
+                        session_id=session_id,
+                        repository=repository,
+                        page_type="pdp",
+                        viewport="desktop",
+                        domain=domain,
+                        nav_timeout_ms=15000,
+                    )
+                    if not nav_result.success:
+                        logger.warning(
+                            "navigation.failed",
+                            url=pdp_url,
+                            error_summary=nav_result.error_summary,
+                            session_id=str(session_id),
+                            page_type="pdp",
+                            viewport="desktop",
+                            domain=domain,
+                        )
+                        continue
                     await wait_for_page_ready(page, soft_timeout=8000)
                     signals = await extract_pdp_validation_signals(page)
                     elapsed_ms = (time.monotonic() - t0) * 1000
@@ -82,6 +104,9 @@ async def run_pdp_discovery_and_validation(
                             "url": pdp_url,
                             "signals": signals,
                             "elapsed_ms": round(elapsed_ms, 2),
+                            "page_type": "pdp",
+                            "viewport": "desktop",
+                            "domain": domain,
                         },
                     )
                     logger.info(

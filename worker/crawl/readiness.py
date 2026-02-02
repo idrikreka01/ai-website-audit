@@ -1,7 +1,9 @@
 """
 Page readiness: wait for ready, scroll sequence, dismiss popups.
 
-Per TECH_SPEC_V1.md; no behavior change.
+Wait/scroll per TECH_SPEC_V1.md. Popup dismissal per TECH_SPEC_V1.1.md §5
+Popup Handling Policy v1.6: two-pass flow (post-ready, post-scroll), overlay-first
+ordering, bounded attempts per pass, safe/risky text filtering. Errors do not fail crawl.
 """
 
 from __future__ import annotations
@@ -9,11 +11,24 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
-from playwright.async_api import Page
+from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from shared.logging import get_logger
-from worker.crawl.constants import DOM_STABILITY_TIMEOUT, MINIMUM_WAIT_AFTER_LOAD, SCROLL_WAIT
+from worker.crawl.constants import (
+    DOM_STABILITY_TIMEOUT,
+    MAX_DISMISSALS_PER_PASS,
+    MINIMUM_WAIT_AFTER_LOAD,
+    POPUP_CLICK_TIMEOUT_MS,
+    POPUP_SETTLE_AFTER_DISMISS_MS,
+    POPUP_VISIBILITY_TIMEOUT_MS,
+    SCROLL_WAIT,
+)
+from worker.crawl.popup_rules import (
+    get_popup_selectors_in_order,
+    is_risky_cta_text,
+    is_safe_dismiss_text,
+)
 
 logger = get_logger(__name__)
 
@@ -105,44 +120,105 @@ async def scroll_sequence(page: Page) -> None:
     await asyncio.sleep(SCROLL_WAIT / 1000)
 
 
+async def _element_dismiss_text(element: Locator) -> str:
+    """Get combined inner text and aria-label for safe/risky check. Returns normalized string."""
+    parts: list[str] = []
+    try:
+        inner = await element.inner_text()
+        if inner:
+            parts.append(inner.strip())
+    except Exception:
+        pass
+    try:
+        aria = await element.get_attribute("aria-label")
+        if aria:
+            parts.append(aria.strip())
+    except Exception:
+        pass
+    return " ".join(parts).strip()
+
+
+def _popup_event(
+    selector: str,
+    action: str,
+    result: str,
+    attempt: int,
+    timestamp: str | None = None,
+) -> dict:
+    """Build a popup event dict for DB logging (selector, action, result, attempt)."""
+    out: dict = {
+        "selector": selector,
+        "action": action,
+        "result": result,
+        "attempt": attempt,
+    }
+    if timestamp is not None:
+        out["timestamp"] = timestamp
+    return out
+
+
 async def dismiss_popups(page: Page) -> list[dict]:
     """
-    Attempt to dismiss common popups/cookie banners.
+    One pass of popup dismissal (post-ready or post-scroll). Max two passes per page:
+    caller invokes once after ready (pass 1), once after scroll (pass 2).
 
-    Returns a list of dismissed popup info (selector, timestamp).
+    Uses overlay-first selector order (dialog/banner before cookie/newsletter),
+    bounded attempts per pass (MAX_DISMISSALS_PER_PASS), and safe/risky text
+    filtering. Deterministic timing: visibility/click timeouts and brief settle
+    after each dismiss. Errors are logged and do not fail the crawl.
+    Per TECH_SPEC_V1.1.md §5 Popup Handling Policy v1.6.
+
+    Returns a list of popup events for DB logging. Each event has selector,
+    action (dismiss_click | detected_ignored | not_found), result (success |
+    failure | skipped), and attempt (1-based). Caller should write each to DB
+    with event_type=popup and context (session_id, page_type, viewport, domain).
     """
-    dismissed = []
-
-    # Common popup/cookie banner selectors (simple heuristic)
-    popup_selectors = [
-        'button:has-text("Accept")',
-        'button:has-text("Accept All")',
-        'button:has-text("I Accept")',
-        'button:has-text("OK")',
-        '[id*="cookie"] button',
-        '[class*="cookie"] button',
-        '[id*="popup"] button[class*="close"]',
-        '[class*="popup"] button[class*="close"]',
-        '[aria-label*="close" i]',
-        '[aria-label*="dismiss" i]',
-    ]
-
-    for selector in popup_selectors:
-        try:
-            element = page.locator(selector).first
-            if await element.is_visible(timeout=1000):
-                await element.click(timeout=2000)
-                dismissed.append(
-                    {
-                        "selector": selector,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
+    events: list[dict] = []
+    dismissed_count = 0
+    try:
+        popup_selectors = get_popup_selectors_in_order(overlay_first=True)
+        for attempt_one_based, selector in enumerate(popup_selectors, start=1):
+            if dismissed_count >= MAX_DISMISSALS_PER_PASS:
+                break
+            try:
+                element = page.locator(selector).first
+                if not await element.is_visible(timeout=POPUP_VISIBILITY_TIMEOUT_MS):
+                    events.append(_popup_event(selector, "not_found", "skipped", attempt_one_based))
+                    continue
+                text = await _element_dismiss_text(element)
+                if is_risky_cta_text(text):
+                    logger.debug(
+                        "popup_skipped",
+                        selector=selector,
+                        reason="risky_cta",
+                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
+                    )
+                    events.append(
+                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
+                    )
+                    continue
+                if not is_safe_dismiss_text(text):
+                    logger.debug(
+                        "popup_skipped",
+                        selector=selector,
+                        reason="not_safe_dismiss",
+                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
+                    )
+                    events.append(
+                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
+                    )
+                    continue
+                await element.click(timeout=POPUP_CLICK_TIMEOUT_MS)
+                ts = datetime.now(timezone.utc).isoformat()
+                events.append(
+                    _popup_event(selector, "dismiss_click", "success", attempt_one_based, ts)
                 )
+                dismissed_count += 1
                 logger.debug("popup_dismissed", selector=selector)
-                # Small wait after dismissal
-                await asyncio.sleep(200 / 1000)
-        except Exception:
-            # Selector didn't match or click failed - continue
-            continue
-
-    return dismissed
+                await asyncio.sleep(POPUP_SETTLE_AFTER_DISMISS_MS / 1000)
+            except Exception:
+                events.append(_popup_event(selector, "dismiss_click", "failure", attempt_one_based))
+                logger.debug("popup_click_failed", selector=selector)
+    except Exception as e:
+        logger.warning("popup_pass_error", error=str(e), error_type=type(e).__name__)
+    return events
