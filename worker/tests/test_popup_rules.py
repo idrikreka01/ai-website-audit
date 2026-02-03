@@ -66,9 +66,9 @@ def test_overlay_first_puts_modal_first():
 
 
 def test_overlay_detection_order():
-    """Overlay-first order is modal → cookie → newsletter → age_gate → geo."""
+    """Overlay-first order is modal → cookie → newsletter → app_download → age_gate → geo."""
     order = POPUP_CATEGORY_ORDER_OVERLAY_FIRST
-    assert order == ("modal", "cookie", "newsletter", "age_gate", "geo")
+    assert order == ("modal", "cookie", "newsletter", "app_download", "age_gate", "geo")
     selectors = get_popup_selectors_in_order(overlay_first=True)
     # First block = modal
     n_modal = len(POPUP_SELECTORS_BY_CATEGORY["modal"])
@@ -76,8 +76,8 @@ def test_overlay_detection_order():
 
 
 def test_default_category_order():
-    """Default category order is cookie → newsletter → modal → age_gate → geo."""
-    assert POPUP_CATEGORY_ORDER == ("cookie", "newsletter", "modal", "age_gate", "geo")
+    """Default category order is cookie → newsletter → modal → app_download → age_gate → geo."""
+    assert POPUP_CATEGORY_ORDER == ("cookie", "newsletter", "modal", "app_download", "age_gate", "geo")
 
 
 # --- Safe-click ordering and no unsafe CTAs ---
@@ -101,6 +101,8 @@ def test_default_category_order():
         "agree",
         "Got it",
         "Continue",
+        "Continue here",
+        "Vazhdo këtu",
         "×",
         "✕",
     ],
@@ -143,6 +145,8 @@ def test_is_safe_dismiss_text_rejects_none():
         "enable notification",
         "Subscribe",
         "subscribe to our newsletter",
+        "Download now",
+        "SHKARKO TANI",
     ],
 )
 def test_is_risky_cta_text_rejects_unsafe(text: str):
@@ -187,7 +191,7 @@ def test_risky_keywords_are_not_safe_dismiss():
 
 def test_popup_selectors_by_category_has_all_categories():
     """All five categories exist and have non-empty selector tuples."""
-    expected = {"cookie", "newsletter", "modal", "age_gate", "geo"}
+    expected = {"cookie", "newsletter", "modal", "app_download", "age_gate", "geo"}
     assert set(POPUP_SELECTORS_BY_CATEGORY.keys()) == expected
     for cat, selectors in POPUP_SELECTORS_BY_CATEGORY.items():
         assert isinstance(selectors, tuple), f"{cat} should be tuple"

@@ -17,16 +17,18 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from shared.logging import get_logger
 from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
-    MAX_DISMISSALS_PER_PASS,
     MINIMUM_WAIT_AFTER_LOAD,
     POPUP_CLICK_TIMEOUT_MS,
-    POPUP_CONTAINER_SELECTORS,
+    POPUP_DISMISS_ROUNDS,
+    POPUP_ROUND_DELAY_MS,
     POPUP_SETTLE_AFTER_DISMISS_MS,
-    POPUP_VISIBILITY_TIMEOUT_MS,
     SCROLL_WAIT,
 )
 from worker.crawl.popup_rules import (
-    get_popup_selectors_in_order,
+    CLOSE_BUTTON_XPATH,
+    CLOSE_CSS,
+    OVERLAY_REMOVE_JS,
+    SCROLL_UNLOCK_JS,
     is_risky_cta_text,
     is_safe_dismiss_text,
 )
@@ -161,105 +163,84 @@ def _popup_event(
     return out
 
 
-async def _is_within_popup_container(element: Locator) -> bool:
-    """Return True if element is inside a known consent/popup container."""
-    if not POPUP_CONTAINER_SELECTORS:
-        return True
-    selector = ", ".join(POPUP_CONTAINER_SELECTORS)
+async def _allow_scroll(page: Page) -> None:
     try:
-        return await element.evaluate("(el, sel) => !!el.closest(sel)", selector)
+        await page.evaluate(SCROLL_UNLOCK_JS)
     except Exception:
-        return False
+        pass
+
+
+async def _remove_overlays(page: Page) -> None:
+    try:
+        await page.evaluate(OVERLAY_REMOVE_JS)
+    except Exception:
+        pass
+
+
+async def _close_popups_xpath_css(page: Page) -> tuple[bool, str | None]:
+    """
+    PopUpsTest-style: try XPath then CSS, click first visible element.
+    Skips elements with risky text (download/shkarko). Returns (clicked, selector_used).
+    """
+    for xpath in CLOSE_BUTTON_XPATH:
+        try:
+            locs = await page.locator(f"xpath={xpath}").all()
+            for loc in locs:
+                if await loc.is_visible():
+                    text = await _element_dismiss_text(loc)
+                    if is_risky_cta_text(text) or not is_safe_dismiss_text(text):
+                        continue
+                    await loc.click(timeout=POPUP_CLICK_TIMEOUT_MS)
+                    return True, xpath
+        except Exception:
+            continue
+    for sel in CLOSE_CSS:
+        try:
+            locs = await page.locator(sel).all()
+            for loc in locs:
+                if await loc.is_visible():
+                    text = await _element_dismiss_text(loc)
+                    if is_risky_cta_text(text) or not is_safe_dismiss_text(text):
+                        continue
+                    await loc.click(timeout=POPUP_CLICK_TIMEOUT_MS)
+                    return True, sel
+        except Exception:
+            continue
+    return False, None
 
 
 async def dismiss_popups(page: Page) -> list[dict]:
     """
-    One pass of popup dismissal (post-ready or post-scroll). Max two passes per page:
-    caller invokes once after ready (pass 1), once after scroll (pass 2).
-
-    Uses overlay-first selector order (dialog/banner before cookie/newsletter),
-    bounded attempts per pass (MAX_DISMISSALS_PER_PASS), and safe/risky text
-    filtering. Deterministic timing: visibility/click timeouts and brief settle
-    after each dismiss. Errors are logged and do not fail the crawl.
-    Per TECH_SPEC_V1.1.md §5 Popup Handling Policy v1.6.
-
-    Returns a list of popup events for DB logging. Each event has selector,
-    action (dismiss_click | detected_ignored | not_found), result (success |
-    failure | skipped), and attempt (1-based). Caller should write each to DB
-    with event_type=popup and context (session_id, page_type, viewport, domain).
+    PopUpsTest-style: allow_scroll → rounds of (close_popups_xpath_css →
+    sleep → remove_overlays → sleep → allow_scroll). Uses XPath+CSS
+    case-insensitive text matching; skips risky CTAs (download/shkarko).
     """
     events: list[dict] = []
-    dismissed_count = 0
+    delay_s = POPUP_ROUND_DELAY_MS / 1000
+    next_attempt = 1
     try:
-        popup_selectors = get_popup_selectors_in_order(overlay_first=True)
-        for attempt_one_based, selector in enumerate(popup_selectors, start=1):
-            if dismissed_count >= MAX_DISMISSALS_PER_PASS:
-                break
-            try:
-                element = page.locator(selector).first
-                if not await element.is_visible(timeout=POPUP_VISIBILITY_TIMEOUT_MS):
-                    events.append(_popup_event(selector, "not_found", "skipped", attempt_one_based))
-                    continue
-                text = await _element_dismiss_text(element)
-                if is_risky_cta_text(text):
-                    logger.debug(
-                        "popup_skipped",
-                        selector=selector,
-                        reason="risky_cta",
-                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
-                    )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
-                    )
-                    continue
-                if not is_safe_dismiss_text(text):
-                    logger.debug(
-                        "popup_skipped",
-                        selector=selector,
-                        reason="not_safe_dismiss",
-                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
-                    )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
-                    )
-                    continue
-                if not await _is_within_popup_container(element):
-                    logger.debug(
-                        "popup_skipped",
-                        selector=selector,
-                        reason="outside_container",
-                        text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
-                    )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
-                    )
-                    continue
-                await element.click(timeout=POPUP_CLICK_TIMEOUT_MS)
+        await _allow_scroll(page)
+        for _ in range(POPUP_DISMISS_ROUNDS):
+            clicked, selector = await _close_popups_xpath_css(page)
+            if clicked and selector:
                 ts = datetime.now(timezone.utc).isoformat()
                 events.append(
                     _popup_event(
                         selector,
                         "dismiss_click",
                         "success",
-                        attempt_one_based,
+                        next_attempt,
                         ts,
                         page.url,
                     )
                 )
-                dismissed_count += 1
-                logger.debug("popup_dismissed", selector=selector)
+                next_attempt += 1
+                logger.debug("popup_dismissed_xpath_css", selector=selector)
                 await asyncio.sleep(POPUP_SETTLE_AFTER_DISMISS_MS / 1000)
-            except Exception:
-                events.append(
-                    _popup_event(
-                        selector,
-                        "dismiss_click",
-                        "failure",
-                        attempt_one_based,
-                        current_url=page.url,
-                    )
-                )
-                logger.debug("popup_click_failed", selector=selector)
+            await asyncio.sleep(delay_s)
+            await _remove_overlays(page)
+            await asyncio.sleep(delay_s)
+            await _allow_scroll(page)
     except Exception as e:
         logger.warning("popup_pass_error", error=str(e), error_type=type(e).__name__)
     return events

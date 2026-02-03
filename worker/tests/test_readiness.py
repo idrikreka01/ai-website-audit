@@ -16,8 +16,8 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
-    MAX_DISMISSALS_PER_PASS,
     MINIMUM_WAIT_AFTER_LOAD,
+    POPUP_DISMISS_ROUNDS,
     SCROLL_WAIT,
 )
 from worker.crawl.readiness import dismiss_popups, scroll_sequence, wait_for_page_ready
@@ -194,25 +194,31 @@ async def test_scroll_sequence_handles_missing_viewport():
     assert page.evaluate.call_count == 3
 
 
+def _make_elem_mock(inner_text="Accept", visible=True):
+    elem = MagicMock()
+    elem.is_visible = AsyncMock(return_value=visible)
+    elem.inner_text = AsyncMock(return_value=inner_text)
+    elem.get_attribute = AsyncMock(return_value=None)
+    elem.click = AsyncMock()
+    return elem
+
+
+def _make_locator_with_all(elem_mock):
+    loc = MagicMock()
+    loc.all = AsyncMock(return_value=[elem_mock])
+    return loc
+
+
 @pytest.mark.asyncio
 async def test_dismiss_popups_success():
-    """Test popup dismissal when popups are visible and pass safe-dismiss text check."""
+    """Test popup dismissal when popups are visible and pass risky check."""
     page = AsyncMock()
-
-    # Mock locator chain for Accept button; must return safe-dismiss text
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=True)
-    locator_mock.first.inner_text = AsyncMock(return_value="Accept")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Accept")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
-    # At least one popup dismissed (event with result=success)
     assert isinstance(events, list)
     assert sum(1 for e in events if e.get("result") == "success") >= 1
     assert page.locator.call_count > 0
@@ -222,17 +228,12 @@ async def test_dismiss_popups_success():
 async def test_dismiss_popups_none_visible():
     """Test popup dismissal when no popups are visible."""
     page = AsyncMock()
-
-    # Mock locator that returns no visible elements
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=False)
-
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock(visible=False)
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
-    # No successful dismissals (events may include not_found/skipped)
     assert sum(1 for e in events if e.get("result") == "success") == 0
 
 
@@ -240,25 +241,13 @@ async def test_dismiss_popups_none_visible():
 async def test_dismiss_popups_continues_on_error():
     """Test popup dismissal continues on error (doesn't crash)."""
     page = AsyncMock()
-
-    # First selector raises exception, second succeeds with safe-dismiss text
-    locator_error = MagicMock()
-    locator_error.first = AsyncMock()
-    locator_error.first.is_visible = AsyncMock(side_effect=Exception("selector failed"))
-
-    locator_success = MagicMock()
-    locator_success.first = AsyncMock()
-    locator_success.first.is_visible = AsyncMock(return_value=True)
-    locator_success.first.inner_text = AsyncMock(return_value="Accept")
-    locator_success.first.get_attribute = AsyncMock(return_value=None)
-    locator_success.first.evaluate = AsyncMock(return_value=True)
-    locator_success.first.click = AsyncMock()
-
-    page.locator = MagicMock(side_effect=[locator_error, locator_success])
+    loc_error = MagicMock()
+    loc_error.all = AsyncMock(side_effect=Exception("selector failed"))
+    loc_ok = _make_locator_with_all(_make_elem_mock("Accept"))
+    page.locator = MagicMock(side_effect=[loc_error] + [loc_ok] * 100)
 
     events = await dismiss_popups(page)
 
-    # Should continue past error and attempt remaining selectors; at least one success
     assert isinstance(events, list)
     assert sum(1 for e in events if e.get("result") == "success") >= 1
 
@@ -267,17 +256,9 @@ async def test_dismiss_popups_continues_on_error():
 async def test_dismiss_popups_logs_selector_and_timestamp():
     """Test popup events include selector, action, result, attempt, and timestamp for success."""
     page = AsyncMock()
-
-    # Mock single visible popup with safe-dismiss text
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(side_effect=[True] + [False] * 20)
-    locator_mock.first.inner_text = AsyncMock(return_value="Accept")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Accept")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
@@ -297,86 +278,58 @@ async def test_dismiss_popups_logs_selector_and_timestamp():
 async def test_dismiss_popups_skips_risky_cta():
     """Test popup dismissal skips risky CTA text (buy/checkout/allow notifications)."""
     page = AsyncMock()
-
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=True)
-    locator_mock.first.inner_text = AsyncMock(return_value="Buy now")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Buy now")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
-    # No click on risky CTA; no successful dismissals
     assert sum(1 for e in events if e.get("result") == "success") == 0
-    locator_mock.first.click.assert_not_called()
+    elem.click.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_dismiss_popups_skips_non_safe_dismiss_text():
-    """Test popup dismissal skips elements that do not match safe-dismiss keywords."""
+async def test_dismiss_popups_skips_risky_or_non_dismiss():
+    """Test popup dismissal skips risky CTA and non-dismiss elements."""
     page = AsyncMock()
-
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=True)
-    locator_mock.first.inner_text = AsyncMock(return_value="Learn more")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Learn more")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
-    # No click when text is not safe-dismiss; no successful dismissals
     assert sum(1 for e in events if e.get("result") == "success") == 0
-    locator_mock.first.click.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_dismiss_popups_max_dismissals_per_pass():
-    """Test bounded attempts: at most MAX_DISMISSALS_PER_PASS successes per pass."""
+async def test_dismiss_popups_max_successes_per_rounds():
+    """Test at most POPUP_DISMISS_ROUNDS successes (one per round)."""
     page = AsyncMock()
-    # Every selector finds a visible, safe-dismiss element (Accept)
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=True)
-    locator_mock.first.inner_text = AsyncMock(return_value="Accept")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Accept")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
     success_events = [e for e in events if e.get("result") == "success"]
-    assert len(success_events) == MAX_DISMISSALS_PER_PASS
-    assert locator_mock.first.click.call_count == MAX_DISMISSALS_PER_PASS
+    assert len(success_events) == POPUP_DISMISS_ROUNDS
+    assert elem.click.call_count == POPUP_DISMISS_ROUNDS
 
 
 @pytest.mark.asyncio
 async def test_dismiss_popups_attempt_numbers_sequential():
-    """Test attempt numbers are 1-based and sequential for events in a pass."""
+    """Test attempt numbers are 1-based and sequential for success events."""
     page = AsyncMock()
-    locator_mock = MagicMock()
-    locator_mock.first = AsyncMock()
-    locator_mock.first.is_visible = AsyncMock(return_value=True)
-    locator_mock.first.inner_text = AsyncMock(return_value="Accept")
-    locator_mock.first.get_attribute = AsyncMock(return_value=None)
-    locator_mock.first.evaluate = AsyncMock(return_value=True)
-    locator_mock.first.click = AsyncMock()
-    page.locator = MagicMock(return_value=locator_mock)
+    elem = _make_elem_mock("Accept")
+    loc = _make_locator_with_all(elem)
+    page.locator = MagicMock(return_value=loc)
 
     events = await dismiss_popups(page)
 
     success_events = [e for e in events if e.get("result") == "success"]
-    assert len(success_events) == MAX_DISMISSALS_PER_PASS
+    assert len(success_events) == POPUP_DISMISS_ROUNDS
     attempts = [e["attempt"] for e in success_events]
-    assert attempts == list(range(1, MAX_DISMISSALS_PER_PASS + 1))
+    assert attempts == list(range(1, POPUP_DISMISS_ROUNDS + 1))
 
 
 # --- Integration with wait_for_page_ready ---

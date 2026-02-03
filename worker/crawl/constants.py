@@ -313,11 +313,25 @@ POPUP_SELECTORS_GEO = (
     '[class*="region"] button[class*="close"]',
 )
 
-# Deterministic order for popup pass (cookie → newsletter → modal → age_gate → geo)
-POPUP_CATEGORY_ORDER = ("cookie", "newsletter", "modal", "age_gate", "geo")
+# App-download promo overlays (dismiss via "Continue here" / "Vazhdo këtu", never "Download now")
+POPUP_SELECTORS_APP_DOWNLOAD = (
+    'button:has-text("Vazhdo")',
+    'button:has-text("Vazhdo këtu")',
+    'a:has-text("Vazhdo")',
+    'a:has-text("Vazhdo këtu")',
+    'button:has-text("Continue here")',
+    'a:has-text("Continue here")',
+    '[class*="app"] a:has-text("Vazhdo")',
+    '[class*="app"] button:has-text("Vazhdo")',
+    '[class*="modal"] a:has-text("Vazhdo")',
+    '[class*="popup"] a:has-text("Vazhdo")',
+)
+
+# Deterministic order for popup pass (cookie → newsletter → modal → app_download → age_gate → geo)
+POPUP_CATEGORY_ORDER = ("cookie", "newsletter", "modal", "app_download", "age_gate", "geo")
 
 # Overlay-first order: dialog/banner (modal) before cookie/newsletter (§5 detection layers)
-POPUP_CATEGORY_ORDER_OVERLAY_FIRST = ("modal", "cookie", "newsletter", "age_gate", "geo")
+POPUP_CATEGORY_ORDER_OVERLAY_FIRST = ("modal", "cookie", "newsletter", "app_download", "age_gate", "geo")
 
 # Container selectors used to ensure dismiss clicks happen inside known consent/pop-up containers.
 POPUP_CONTAINER_SELECTORS = (
@@ -334,10 +348,16 @@ POPUP_CONTAINER_SELECTORS = (
     "[class*='modal']",
     "[role='dialog']",
     ".offcanvas",
+    "[class*='app-download']",
+    "[class*='appDownload']",
+    "[id*='app-download']",
 )
 
 # Bounded attempts per pass (max dismissals per pass; deterministic timing)
 MAX_DISMISSALS_PER_PASS = 5
+POPUP_DISMISS_ROUNDS = 4
+POPUP_CLICKS_PER_ROUND = 2
+POPUP_ROUND_DELAY_MS = 400
 POPUP_VISIBILITY_TIMEOUT_MS = 1000
 POPUP_CLICK_TIMEOUT_MS = 2000
 POPUP_SETTLE_AFTER_DISMISS_MS = 200
@@ -354,6 +374,7 @@ SAFE_DISMISS_KEYWORDS = frozenset(
         "close",
         "confirmar mis preferencias",
         "continue",
+        "continue here",
         "dismiss",
         "got it",
         "gestionar las preferencias de consentimiento",
@@ -363,6 +384,8 @@ SAFE_DISMISS_KEYWORDS = frozenset(
         "ok",
         "permitir todas",
         "permitirlas todas",
+        "vazhdo",
+        "vazhdo këtu",
         "×",  # multiplication sign, common close icon
         "✕",  # ballot x, common close icon
     ]
@@ -376,6 +399,8 @@ RISKY_CTA_KEYWORDS = frozenset(
         "checkout",
         "allow notification",
         "enable notification",
-        "subscribe",  # newsletter subscribe CTA, not dismiss
+        "subscribe",
+        "download",
+        "shkarko",
     ]
 )
