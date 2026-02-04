@@ -123,7 +123,9 @@ def create_question(
     except Exception as e:
         error_msg = str(e)
         if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
-            logger.warning("audit_question_creation_failed_duplicate", key=request.key, error=error_msg)
+            logger.warning(
+                "audit_question_creation_failed_duplicate", key=request.key, error=error_msg
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Question with key '{request.key}' already exists",

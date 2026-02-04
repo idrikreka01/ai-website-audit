@@ -331,7 +331,9 @@ class AuditService:
         results_data = self.repository.get_question_results_by_audit_id(audit_id)
         return [AuditQuestionResultResponse(**r) for r in results_data]
 
-    def get_question_results_by_question(self, question_id: UUID) -> list[AuditQuestionResultResponse]:
+    def get_question_results_by_question(
+        self, question_id: UUID
+    ) -> list[AuditQuestionResultResponse]:
         """
         Get all results for a specific question across all audits.
 

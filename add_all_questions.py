@@ -4,12 +4,13 @@ Script to add all audit questions to the database via API.
 
 Run with: python add_all_questions.py
 """
+# ruff: noqa: E501
 
 import json
 import re
 from typing import Optional
-from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 BASE_URL = "http://localhost:8000"
 
@@ -17,8 +18,8 @@ BASE_URL = "http://localhost:8000"
 def generate_key(question_text: str, stage: str) -> str:
     """Generate a unique key from question text."""
     key = question_text.lower()
-    key = re.sub(r'[^a-z0-9\s]', '', key)
-    key = re.sub(r'\s+', '_', key)
+    key = re.sub(r"[^a-z0-9\s]", "", key)
+    key = re.sub(r"\s+", "_", key)
     key = key[:50]
     prefix = stage[:2].lower()
     return f"{prefix}_{key}"
@@ -84,7 +85,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "The H1 or H2 contains at least one quantifiable power word (e.g., \"Save 30%,\" \"100% Organic,\" \"Results in 7 days\").",
+        "question_text": 'The H1 or H2 contains at least one quantifiable power word (e.g., "Save 30%," "100% Organic," "Results in 7 days").',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 2,
@@ -168,7 +169,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "An aggregate star rating (e.g., \"4.8/5 Stars\") or social proof (Used by 5,000+ people) is visible near the top of the home page.",
+        "question_text": 'An aggregate star rating (e.g., "4.8/5 Stars") or social proof (Used by 5,000+ people) is visible near the top of the home page.',
         "primary_payload": "Screenshot",
         "secondary_payload": "DOM",
         "tier": 1,
@@ -240,7 +241,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "A \"Quick Add\" button is available on all product collection grid images so users don't have to load a new page to begin a conversion.",
+        "question_text": 'A "Quick Add" button is available on all product collection grid images so users don\'t have to load a new page to begin a conversion.',
         "primary_payload": "DOM",
         "secondary_payload": "Screenshot",
         "tier": 2,
@@ -276,7 +277,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "Top-level navigation is limited to 7 items or fewer to avoid \"choice paralysis.\"",
+        "question_text": 'Top-level navigation is limited to 7 items or fewer to avoid "choice paralysis."',
         "primary_payload": "DOM",
         "secondary_payload": "Screenshot",
         "tier": 3,
@@ -312,7 +313,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "The \"Shop Now\" button on mobile is placed within the \"Thumb Zone\" (center or bottom half of screen).",
+        "question_text": 'The "Shop Now" button on mobile is placed within the "Thumb Zone" (center or bottom half of screen).',
         "primary_payload": "Screenshot",
         "secondary_payload": "-",
         "tier": 2,
@@ -348,7 +349,7 @@ questions_data = [
     },
     {
         "stage": "awareness",
-        "question_text": "404 Check: Does the site have a \"Continue Shopping\" button on its 404 page?",
+        "question_text": '404 Check: Does the site have a "Continue Shopping" button on its 404 page?',
         "primary_payload": "",
         "secondary_payload": "",
         "tier": 3,
@@ -516,7 +517,7 @@ questions_data = [
     },
     {
         "stage": "consideration",
-        "question_text": "Individual reviews include a \"Verified Buyer\" badge to objectively distinguish authentic feedback from general comments.",
+        "question_text": 'Individual reviews include a "Verified Buyer" badge to objectively distinguish authentic feedback from general comments.',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 2,
@@ -600,7 +601,7 @@ questions_data = [
     },
     {
         "stage": "consideration",
-        "question_text": "A \"Frequently Bought Together\" or \"Bundle & Save\" widget is present to increase Average Order Value (AOV).",
+        "question_text": 'A "Frequently Bought Together" or "Bundle & Save" widget is present to increase Average Order Value (AOV).',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 2,
@@ -624,7 +625,7 @@ questions_data = [
     },
     {
         "stage": "consideration",
-        "question_text": "Clear toggles for \"Subscribe & Save\" or \"Quantity Discounts\" are included in the product selection area.",
+        "question_text": 'Clear toggles for "Subscribe & Save" or "Quantity Discounts" are included in the product selection area.',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 2,
@@ -684,7 +685,7 @@ questions_data = [
     },
     {
         "stage": "conversion",
-        "question_text": "The mini-cart or cart page offers 1-click \"Frequently Bought Together\" additions to increase order size before the final checkout.",
+        "question_text": 'The mini-cart or cart page offers 1-click "Frequently Bought Together" additions to increase order size before the final checkout.',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 1,
@@ -708,7 +709,7 @@ questions_data = [
     },
     {
         "stage": "conversion",
-        "question_text": "The mini-cart shows a spend-based progress message (e.g., \"$10 to free shipping\") that updates as items are added.",
+        "question_text": 'The mini-cart shows a spend-based progress message (e.g., "$10 to free shipping") that updates as items are added.',
         "primary_payload": "DOM",
         "secondary_payload": "Simulated Interaction",
         "tier": 2,
@@ -768,7 +769,7 @@ questions_data = [
     },
     {
         "stage": "conversion",
-        "question_text": "Express payment buttons (e.g., Apple Pay, ShopPay, Google Pay) are loaded at the top of the checkout to enable \"2-click\" purchasing.",
+        "question_text": 'Express payment buttons (e.g., Apple Pay, ShopPay, Google Pay) are loaded at the top of the checkout to enable "2-click" purchasing.',
         "primary_payload": "DOM",
         "secondary_payload": "-",
         "tier": 2,
@@ -881,10 +882,9 @@ def add_question(question_data: dict) -> Optional[dict]:
     """Add a single question via API."""
     key = generate_key(question_data["question_text"], question_data["stage"])
     evidence_types = parse_evidence_types(
-        question_data.get("primary_payload", ""),
-        question_data.get("secondary_payload", "")
+        question_data.get("primary_payload", ""), question_data.get("secondary_payload", "")
     )
-    
+
     payload = {
         "key": key,
         "stage": question_data["stage"],
@@ -901,16 +901,16 @@ def add_question(question_data: dict) -> Optional[dict]:
         "fail_criteria": None,
         "notes": None,
     }
-    
+
     url = f"{BASE_URL}/audits/questions"
-    data = json.dumps(payload).encode('utf-8')
-    
-    req = Request(url, data=data, headers={'Content-Type': 'application/json'}, method='POST')
-    
+    data = json.dumps(payload).encode("utf-8")
+
+    req = Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+
     try:
         with urlopen(req) as response:
             if response.status == 201:
-                result = json.loads(response.read().decode('utf-8'))
+                result = json.loads(response.read().decode("utf-8"))
                 print(f"✅ Added: {key}")
                 return result
     except HTTPError as e:
@@ -918,7 +918,7 @@ def add_question(question_data: dict) -> Optional[dict]:
             print(f"⚠️  Already exists: {key}")
             return None
         else:
-            error_body = e.read().decode('utf-8') if e.fp else str(e)
+            error_body = e.read().decode("utf-8") if e.fp else str(e)
             print(f"❌ Failed to add {key}: {e.code}")
             print(f"   Error: {error_body}")
             return None
@@ -930,11 +930,11 @@ def add_question(question_data: dict) -> Optional[dict]:
 def main():
     """Add all questions to the database."""
     print(f"Adding {len(questions_data)} questions to {BASE_URL}/audits/questions\n")
-    
+
     success_count = 0
     skipped_count = 0
     error_count = 0
-    
+
     for question in questions_data:
         result = add_question(question)
         if result:
@@ -943,9 +943,9 @@ def main():
             skipped_count += 1
         else:
             error_count += 1
-    
+
     print(f"\n{'='*50}")
-    print(f"Summary:")
+    print("Summary:")
     print(f"  ✅ Successfully added: {success_count}")
     print(f"  ⚠️  Skipped (already exists): {skipped_count}")
     print(f"  ❌ Errors: {error_count}")

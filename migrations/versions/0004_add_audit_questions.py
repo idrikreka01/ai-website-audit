@@ -110,7 +110,9 @@ def upgrade() -> None:
             "(ai_confidence_1_to_10 IS NULL) OR (ai_confidence_1_to_10 >= 1 AND ai_confidence_1_to_10 <= 10)",
             name="ck_audit_question_results_ai_confidence",
         ),
-        sa.UniqueConstraint("audit_id", "question_id", name="uq_audit_question_results_audit_question"),
+        sa.UniqueConstraint(
+            "audit_id", "question_id", name="uq_audit_question_results_audit_question"
+        ),
     )
 
     op.create_index(

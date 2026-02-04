@@ -129,9 +129,7 @@ class CreateAuditQuestionRequest(BaseModel):
         ..., description="Page type this question applies to"
     )
     narrative_tier: int = Field(..., ge=1, le=3, description="Narrative tier (1, 2, or 3)")
-    baseline_severity: int = Field(
-        ..., ge=1, le=5, description="Baseline severity score (1-5)"
-    )
+    baseline_severity: int = Field(..., ge=1, le=5, description="Baseline severity score (1-5)")
     question_text: str = Field(..., description="The audit question text")
     allowed_evidence_types: list[str] = Field(
         default_factory=list,
