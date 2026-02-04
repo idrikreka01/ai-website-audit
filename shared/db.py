@@ -106,3 +106,15 @@ def get_crawl_logs_table() -> Table:
     """Get the crawl_logs table."""
     metadata = get_table_metadata()
     return metadata.tables["crawl_logs"]
+
+
+def get_audit_questions_table() -> Table:
+    """Get the audit_questions table."""
+    metadata = get_table_metadata()
+    return metadata.tables["audit_questions"]
+
+
+def get_audit_question_results_table() -> Table:
+    """Get the audit_question_results table."""
+    metadata = get_table_metadata()
+    return metadata.tables["audit_question_results"]

@@ -17,9 +17,13 @@ from api.db import get_db_session
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
     ArtifactResponse,
+    AuditQuestionResponse,
+    AuditQuestionResultResponse,
     AuditSessionResponse,
+    CreateAuditQuestionRequest,
     CreateAuditRequest,
     CreateAuditResponse,
+    UpdateAuditQuestionRequest,
 )
 from api.services.audit_service import AuditService
 from shared.logging import bind_request_context, get_logger
@@ -95,6 +99,242 @@ def create_audit(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create audit session",
         )
+
+
+@router.post(
+    "/questions",
+    response_model=AuditQuestionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new audit question",
+)
+def create_question(
+    request: CreateAuditQuestionRequest,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuditQuestionResponse:
+    """
+    Create a new audit question.
+
+    Creates a new question in the audit question library.
+    """
+    try:
+        response = service.create_question(request)
+        logger.info("audit_question_creation_requested", key=request.key)
+        return response
+    except Exception as e:
+        error_msg = str(e)
+        if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
+            logger.warning("audit_question_creation_failed_duplicate", key=request.key, error=error_msg)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Question with key '{request.key}' already exists",
+            )
+        logger.error(
+            "audit_question_creation_error",
+            error=error_msg,
+            error_type=type(e).__name__,
+            key=request.key,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create audit question",
+        )
+
+
+@router.get(
+    "/questions",
+    response_model=list[AuditQuestionResponse],
+    summary="List audit questions",
+)
+def list_questions(
+    stage: str | None = None,
+    page_type: str | None = None,
+    category: str | None = None,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> list[AuditQuestionResponse]:
+    """
+    List audit questions with optional filters.
+
+    Returns all questions matching the optional filters (stage, page_type, category).
+    """
+    questions = service.list_questions(
+        stage=stage,
+        page_type=page_type,
+        category=category,
+    )
+    logger.debug(
+        "audit_questions_listed",
+        count=len(questions),
+        filters={"stage": stage, "page_type": page_type, "category": category},
+    )
+    return questions
+
+
+@router.get(
+    "/questions/{question_id}/results",
+    response_model=list[AuditQuestionResultResponse],
+    summary="Get all results for a specific question",
+)
+def get_question_results(
+    question_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> list[AuditQuestionResultResponse]:
+    """
+    Get all results for a specific question across all audits.
+
+    Returns a list of results for the given question.
+    Returns an empty list if the question exists but has no results.
+    Returns 404 if the question is not found.
+    """
+    question = service.get_question(question_id)
+    if question is None:
+        logger.warning("audit_question_not_found_for_results", question_id=str(question_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit question {question_id} not found",
+        )
+
+    results = service.get_question_results_by_question(question_id)
+    logger.debug(
+        "question_results_retrieved",
+        question_id=str(question_id),
+        result_count=len(results),
+    )
+    return results
+
+
+@router.get(
+    "/questions/{question_id}",
+    response_model=AuditQuestionResponse,
+    summary="Get audit question by ID",
+)
+def get_question(
+    question_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuditQuestionResponse:
+    """
+    Get an audit question by ID.
+
+    Returns 404 if the question is not found.
+    """
+    question = service.get_question(question_id)
+    if question is None:
+        logger.warning("audit_question_not_found", question_id=str(question_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit question {question_id} not found",
+        )
+    logger.debug("audit_question_retrieved", question_id=str(question_id))
+    return question
+
+
+@router.put(
+    "/questions/{question_id}",
+    response_model=AuditQuestionResponse,
+    summary="Update an audit question",
+)
+def update_question(
+    question_id: UUID,
+    request: UpdateAuditQuestionRequest,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuditQuestionResponse:
+    """
+    Update an audit question.
+
+    Updates only the provided fields. Returns 404 if the question is not found.
+    """
+    question = service.update_question(question_id, request)
+    if question is None:
+        logger.warning("audit_question_not_found_for_update", question_id=str(question_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit question {question_id} not found",
+        )
+    logger.debug("audit_question_updated", question_id=str(question_id))
+    return question
+
+
+@router.delete(
+    "/questions/{question_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an audit question",
+)
+def delete_question(
+    question_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> None:
+    """
+    Delete an audit question by ID.
+
+    Returns 404 if the question is not found, 204 if successfully deleted.
+    """
+    deleted = service.delete_question(question_id)
+    if not deleted:
+        logger.warning("audit_question_not_found_for_delete", question_id=str(question_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit question {question_id} not found",
+        )
+    logger.info("audit_question_deleted", question_id=str(question_id))
+
+
+@router.get(
+    "/question-results/{result_id}",
+    response_model=AuditQuestionResultResponse,
+    summary="Get a question result by ID",
+)
+def get_question_result(
+    result_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuditQuestionResultResponse:
+    """
+    Get a question result by ID.
+
+    Returns 404 if the result is not found.
+    """
+    result = service.get_question_result(result_id)
+    if result is None:
+        logger.warning("audit_question_result_not_found", result_id=str(result_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question result {result_id} not found",
+        )
+    logger.debug("audit_question_result_retrieved", result_id=str(result_id))
+    return result
+
+
+@router.get(
+    "/{session_id}/question-results",
+    response_model=list[AuditQuestionResultResponse],
+    summary="Get question results for an audit session",
+)
+def get_audit_question_results(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> list[AuditQuestionResultResponse]:
+    """
+    Get all question results for an audit session.
+
+    Returns a list of question evaluation results for the given audit session.
+    Returns an empty list if the session exists but has no results.
+    Returns 404 if the session is not found.
+    """
+    bind_request_context(session_id=str(session_id))
+
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_results", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+
+    results = service.get_question_results_by_audit(session_id)
+    logger.debug(
+        "audit_question_results_retrieved",
+        session_id=str(session_id),
+        result_count=len(results),
+    )
+    return results
 
 
 @router.get(
