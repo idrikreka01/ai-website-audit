@@ -15,11 +15,13 @@ from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from shared.logging import get_logger
+from worker.crawl.blocked_page import apply_overlay_hide_in_frames, detect_blocked_page
 from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
     MAX_DISMISSALS_PER_PASS,
     MAX_SCROLL_STEPS,
     MINIMUM_WAIT_AFTER_LOAD,
+    OVERLAY_HIDE_SETTLE_MS,
     POPUP_CLICK_TIMEOUT_MS,
     POPUP_CONTAINER_SELECTORS,
     POPUP_SETTLE_AFTER_DISMISS_MS,
@@ -265,3 +267,60 @@ async def dismiss_popups(page: Page) -> list[dict]:
     except Exception as e:
         logger.warning("popup_pass_error", error=str(e), error_type=type(e).__name__)
     return events
+
+
+async def run_overlay_hide_fallback(page: Page) -> list[dict]:
+    """
+    Last-resort overlay hide fallback (TECH_SPEC_V1.1.md §5 v1.23).
+
+    Run only after both safe-dismiss passes. If blocked-page detection is True,
+    hide overlay candidates (visibility: hidden) in main doc + all iframes,
+    one pass only. Excludes structural nodes (html, body, main, header, nav, footer).
+
+    Returns a list of 0 or 1 popup event for DB logging. Event has action=
+    overlay_hide_fallback, hidden_count, frame_count, scroll_locked, click_blocked.
+    """
+    result = await detect_blocked_page(page)
+    if not result["is_blocked"]:
+        return []
+    total_hidden, frame_count = await apply_overlay_hide_in_frames(page)
+    # Settle delay after overlay hide (TECH_SPEC §5 v1.24); only when fallback ran
+    await asyncio.sleep(OVERLAY_HIDE_SETTLE_MS / 1000)
+    ts = datetime.now(timezone.utc).isoformat()
+    event: dict = {
+        "selector": "overlay_hide_fallback",
+        "action": "overlay_hide_fallback",
+        "result": "success" if total_hidden > 0 else "failure",
+        "attempt": 0,
+        "timestamp": ts,
+        "current_url": page.url,
+        "hidden_count": total_hidden,
+        "frame_count": frame_count,
+        "scroll_locked": result["scroll_locked"],
+        "click_blocked": result["click_blocked"],
+    }
+    logger.info(
+        "overlay_hide_fallback",
+        hidden_count=total_hidden,
+        frame_count=frame_count,
+        scroll_locked=result["scroll_locked"],
+        click_blocked=result["click_blocked"],
+    )
+    return [event]
+
+
+async def run_extraction_retry_prep(
+    page: Page,
+    *,
+    soft_timeout: int = 5000,
+) -> tuple[list[dict], list[dict]]:
+    """
+    Prep for extraction retry (TECH_SPEC_V1.1.md §5 v1.24).
+
+    Short wait_for_page_ready, one popup pass, then overlay hide fallback.
+    Returns (popup_events, overlay_fallback_events) for caller to log.
+    """
+    await wait_for_page_ready(page, soft_timeout=soft_timeout)
+    popup_events = await dismiss_popups(page)
+    overlay_events = await run_overlay_hide_fallback(page)
+    return (popup_events, overlay_events)

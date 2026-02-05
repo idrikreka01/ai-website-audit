@@ -18,9 +18,16 @@ from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
     MAX_DISMISSALS_PER_PASS,
     MINIMUM_WAIT_AFTER_LOAD,
+    OVERLAY_HIDE_SETTLE_MS,
     SCROLL_WAIT,
 )
-from worker.crawl.readiness import dismiss_popups, scroll_sequence, wait_for_page_ready
+from worker.crawl.readiness import (
+    dismiss_popups,
+    run_extraction_retry_prep,
+    run_overlay_hide_fallback,
+    scroll_sequence,
+    wait_for_page_ready,
+)
 
 
 @pytest.mark.asyncio
@@ -396,3 +403,222 @@ async def test_readiness_constants_match_spec():
     assert DOM_STABILITY_TIMEOUT == 1000  # 1s in ms
     assert MINIMUM_WAIT_AFTER_LOAD == 2000  # 2s in ms
     assert SCROLL_WAIT == 2000  # 2s per scroll (matches constants.py)
+
+
+# --- Overlay hide fallback (TECH_SPEC §5 v1.23) ---
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_returns_empty_when_not_blocked():
+    """Fallback does not run when page is not blocked (e.g. dismiss already succeeded)."""
+    with patch(
+        "worker.crawl.readiness.detect_blocked_page",
+        new_callable=AsyncMock,
+        return_value={
+            "is_blocked": False,
+            "has_overlay_candidate": False,
+            "scroll_locked": False,
+            "click_blocked": False,
+            "overlay_candidate_count": 0,
+        },
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        events = await run_overlay_hide_fallback(page)
+    assert events == []
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_runs_only_when_blocked():
+    """Fallback runs only when blocked (A + B); returns one event with summary details."""
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": True,
+                "has_overlay_candidate": True,
+                "scroll_locked": True,
+                "click_blocked": False,
+                "overlay_candidate_count": 1,
+            },
+        ),
+        patch(
+            "worker.crawl.readiness.apply_overlay_hide_in_frames",
+            new_callable=AsyncMock,
+            return_value=(3, 2),
+        ),
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        events = await run_overlay_hide_fallback(page)
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["action"] == "overlay_hide_fallback"
+    assert ev["result"] == "success"
+    assert ev["hidden_count"] == 3
+    assert ev["frame_count"] == 2
+    assert ev["scroll_locked"] is True
+    assert ev["click_blocked"] is False
+    assert "timestamp" in ev
+    assert ev.get("current_url") == "https://example.com/"
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_result_failure_when_hidden_zero():
+    """When fallback runs but hidden_count=0, result is failure."""
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": True,
+                "has_overlay_candidate": True,
+                "scroll_locked": True,
+                "click_blocked": False,
+                "overlay_candidate_count": 1,
+            },
+        ),
+        patch(
+            "worker.crawl.readiness.apply_overlay_hide_in_frames",
+            new_callable=AsyncMock,
+            return_value=(0, 1),
+        ),
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        events = await run_overlay_hide_fallback(page)
+    assert len(events) == 1
+    assert events[0]["result"] == "failure"
+    assert events[0]["hidden_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_invokes_iframe_handling():
+    """When blocked, apply_overlay_hide_in_frames (iframe handling) is invoked."""
+    apply_mock = AsyncMock(return_value=(1, 2))
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": True,
+                "has_overlay_candidate": True,
+                "scroll_locked": False,
+                "click_blocked": True,
+                "overlay_candidate_count": 1,
+            },
+        ),
+        patch("worker.crawl.readiness.apply_overlay_hide_in_frames", apply_mock),
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        await run_overlay_hide_fallback(page)
+    apply_mock.assert_awaited_once_with(page)
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_logging_includes_overlay_hide_fallback():
+    """Logging includes overlay_hide_fallback when fallback runs."""
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": True,
+                "has_overlay_candidate": True,
+                "scroll_locked": True,
+                "click_blocked": False,
+                "overlay_candidate_count": 1,
+            },
+        ),
+        patch(
+            "worker.crawl.readiness.apply_overlay_hide_in_frames",
+            new_callable=AsyncMock,
+            return_value=(2, 1),
+        ),
+        patch("worker.crawl.readiness.logger") as mock_logger,
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        await run_overlay_hide_fallback(page)
+    mock_logger.info.assert_called_once()
+    call_kwargs = mock_logger.info.call_args[1]
+    assert call_kwargs.get("hidden_count") == 2
+    assert call_kwargs.get("frame_count") == 1
+    assert mock_logger.info.call_args[0][0] == "overlay_hide_fallback"
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_delay_applied_when_blocked():
+    """Overlay hide settle delay only when fallback runs (TECH_SPEC §5 v1.24)."""
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": True,
+                "has_overlay_candidate": True,
+                "scroll_locked": False,
+                "click_blocked": False,
+                "overlay_candidate_count": 1,
+            },
+        ),
+        patch(
+            "worker.crawl.readiness.apply_overlay_hide_in_frames",
+            new_callable=AsyncMock,
+            return_value=(1, 1),
+        ),
+        patch("worker.crawl.readiness.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        await run_overlay_hide_fallback(page)
+    mock_sleep.assert_awaited_once_with(OVERLAY_HIDE_SETTLE_MS / 1000)
+
+
+@pytest.mark.asyncio
+async def test_run_overlay_hide_fallback_delay_not_applied_when_not_blocked():
+    """When page is not blocked, no settle delay is applied (no asyncio.sleep)."""
+    with (
+        patch(
+            "worker.crawl.readiness.detect_blocked_page",
+            new_callable=AsyncMock,
+            return_value={
+                "is_blocked": False,
+                "has_overlay_candidate": False,
+                "scroll_locked": False,
+                "click_blocked": False,
+                "overlay_candidate_count": 0,
+            },
+        ),
+        patch("worker.crawl.readiness.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        page = AsyncMock()
+        page.url = "https://example.com/"
+        await run_overlay_hide_fallback(page)
+    mock_sleep.assert_not_called()
+
+
+# --- Extraction retry prep (TECH_SPEC §5 v1.24) ---
+
+
+@pytest.mark.asyncio
+async def test_run_extraction_retry_prep_order_and_return():
+    """Retry prep: wait_for_page_ready, dismiss_popups, overlay fallback; returns both lists."""
+    wait_mock = AsyncMock(return_value={"ready": "ok"})
+    popup_events = [{"action": "dismiss_click", "result": "success"}]
+    overlay_events = [{"action": "overlay_hide_fallback"}]
+    dismiss_mock = AsyncMock(return_value=popup_events)
+    overlay_mock = AsyncMock(return_value=overlay_events)
+    with (
+        patch("worker.crawl.readiness.wait_for_page_ready", wait_mock),
+        patch("worker.crawl.readiness.dismiss_popups", dismiss_mock),
+        patch("worker.crawl.readiness.run_overlay_hide_fallback", overlay_mock),
+    ):
+        page = AsyncMock()
+        result = await run_extraction_retry_prep(page, soft_timeout=3000)
+    assert result == (popup_events, overlay_events)
+    wait_mock.assert_awaited_once_with(page, soft_timeout=3000)
+    dismiss_mock.assert_awaited_once_with(page)
+    overlay_mock.assert_awaited_once_with(page)

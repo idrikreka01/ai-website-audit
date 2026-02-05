@@ -1,7 +1,7 @@
 # TECH SPEC V1.1 — AI-Powered Website Audit (Merged)
 
 **Version**: 1.1  
-**Status**: Full spec (V1) + operational addendum + PDP validation + popup policy (policy v1.22)
+**Status**: Full spec (V1) + operational addendum + PDP validation + popup policy (policy v1.24)
 
 ---
 
@@ -11,7 +11,7 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 0) Crawl policy version
 
-- **crawl_policy_version**: `v1.22` (Popup logging: dismiss events only; see §5).
+- **crawl_policy_version**: `v1.24` (Deterministic settle delays after popup/overlay; extraction retry on transient Playwright errors; see §5).
 - **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
 - **v1.2**: PDP validation requires price + title+image.
 - **v1.3**: Navigation retry policy: attempts, backoff, timeouts, retryable classes, and bot-block detection with single mitigation retry (§5).
@@ -32,6 +32,8 @@ This document is the authoritative, merged specification. It includes all conten
 - **v1.20**: Artifact naming convention changed to domain-first (`{domain}__{session_id}/...`). New artifact type `session_logs_jsonl` for exported session logs. All session-scoped logs stored in `crawl_logs` and exported as session log artifact; session log retention is long-term (no cleanup).
 - **v1.21**: Popup logging records only detected popup events (no selector-miss logs).
 - **v1.22**: Popup logging records only dismiss events (success/failure); detected-ignored events are not logged.
+- **v1.23**: Last-resort overlay hide fallback after safe-dismiss passes: blocked-page detection (large fixed/absolute overlay, scroll-lock or click-blocked); hide (no remove) in main doc + iframes, one pass; exclude structural nodes; single popup event `action=overlay_hide_fallback`.
+- **v1.24**: Deterministic settle delays: after each popup dismiss click (configurable, e.g. 500 ms); after overlay hide fallback (configurable, e.g. 500 ms). Extraction retry policy: retry once (max 2 attempts total) on transient Playwright errors (execution context destroyed, target closed, navigation interrupted); retry flow: short wait_for_page_ready → optional popup pass → overlay fallback → retry extraction; log retries with `event_type=retry`, reason, attempt, page_type, viewport.
 
 ---
 
@@ -77,7 +79,7 @@ This document is the authoritative, merged specification. It includes all conten
   - retention_policy (standard | short | long)
   - attempts (integer)
   - final_url (after redirects)
-  - crawl_policy_version (e.g., v1.22; PDP-not-found → partial; retry policy §5; popup policy §5)
+  - crawl_policy_version (e.g., v1.24; PDP-not-found → partial; retry policy §5; popup policy §5; extraction retry §5)
   - error_summary (nullable)
   - config_snapshot (frozen crawl policy config for this run)
   - low_confidence (boolean)
@@ -211,14 +213,29 @@ This document is the authoritative, merged specification. It includes all conten
     - Only click elements that are: visible, stable (in DOM and not animating), and match dismiss semantics (e.g. "accept", "agree", "close", "no thanks", "dismiss").
     - Prefer buttons/links with explicit dismiss intent; avoid submitting forms or navigating away.
     - One dismiss action per detected overlay per pass; deterministic order (e.g. by selector priority or DOM order).
+  - **Settle delays** (v1.24)
+    - **After popup dismiss click**: Wait a deterministic settle delay (e.g. 500 ms, configurable) after each successful or attempted dismiss click before continuing detection or extraction. Ensures DOM/overlays have time to update.
+    - **After overlay hide fallback**: Wait a deterministic settle delay (e.g. 500 ms, configurable) after the overlay-hide fallback runs before proceeding to extraction. Ensures layout has settled.
   - **Two-pass flow**
-    - **Pass 1**: After page load (or after navigation ready), run popup detection and safe dismiss in defined order. Wait briefly for DOM to settle after each dismiss.
-    - **Pass 2**: If any dismiss occurred in pass 1, run detection once more (to catch secondary or delayed overlays). Maximum two passes per page; no further popup passes after that.
+    - **Pass 1**: After page load (or after navigation ready), run popup detection and safe dismiss in defined order. After each dismiss, apply the settle delay (see above).
+    - **Pass 2**: If any dismiss occurred in pass 1, run detection once more (to catch secondary or delayed overlays). After each dismiss, apply the settle delay. Maximum two passes per page; no further popup passes after that.
   - **Logging requirements**
     - Log only dismiss events (no selector-miss logs; no detected-ignored logs).
     - For each dismiss event, log: `event_type: popup`; `selector` (or selector family); `action` (dismiss_click); `result` (success or failure); and page context (session_id, page_type, viewport, url or page identifier).
   - **Failure handling**
     - If a safe-click fails (element not found, not clickable, timeout): log and continue; do not fail the page. If overlays remain after both passes, log and continue with evidence capture. Page success is not conditional on popup dismissal.
+  - **Last-resort overlay hide fallback** (v1.23)
+    - **When**: Runs once per page, only after both safe-dismiss passes are complete. Applied only when the page is considered blocked.
+    - **Blocked-page detection** (all must be satisfied to trigger fallback):
+      - **Overlay heuristic**: At least one element is large fixed or absolute, has z-index ≥ 10, and covers a large portion of the viewport (>40% of viewport area).
+      - **Blocking signal**: Either (a) document or body has scroll locked (e.g. overflow hidden, position fixed), or (b) a click at the viewport center is blocked or intercepted by an overlay (element at center is the overlay or its descendant).
+    - **Fallback behavior**:
+      - **Action**: Hide matching overlay elements (e.g. set `visibility: hidden` or equivalent); do not remove nodes from the DOM.
+      - **Scope**: Apply in the main document and in all iframes (one pass per frame; do not recurse indefinitely).
+      - **One pass only**: Run the hide step once per page; no second overlay-hide pass.
+      - **Exclusions**: Do not hide structural nodes: `html`, `body`, `main`, `header`, `nav`, `footer`. Only hide elements that match the overlay heuristic above.
+    - **Logging**: Emit a single popup event per page when the fallback runs: `event_type: popup`; `action: overlay_hide_fallback`; include summary details (e.g. count of elements hidden, frame count, whether scroll-lock or click-blocked was detected). If fallback does not run (page not considered blocked), do not log this event.
+    - **After fallback**: Apply the deterministic settle delay (see Settle delays above) before proceeding to extraction.
   - **Pre-consent injection** (v1.7)
     - **Goal**: Suppress vendor-managed consent panels before UI renders.
     - **Vendors**: Apply known vendor scripts (initially OneTrust + Shopware-style off-canvas consent).
@@ -243,6 +260,21 @@ This document is the authoritative, merged specification. It includes all conten
     - **Detection**: Treat as bot-block only for highest-confidence indicators after a successful navigation (e.g., "captcha", "verify you are human", "attention required", "cloudflare", "ddos protection"), or blocked HTTP status (403/503/429).
     - **Mitigation**: Exactly one additional attempt after bot-block detection: wait 2 s (configurable), then reload the same URL (same viewport, no UA change). No further retries for bot-block after this single mitigation.
     - **Logging**: Log `event_type: retry`, reason (e.g. `navigation_timeout`, `net_err`, `status_403_503`, `status_429`, `bot_block`), attempt number, and backoff applied.
+
+- **Extraction retry policy** (v1.24)
+  - **Purpose**: Recover from transient Playwright errors that can occur during or immediately after page ready (e.g. context/target closed, navigation interrupted).
+  - **Triggers** (retry only on these; one retry per page, max 2 extraction attempts total):
+    - Execution context destroyed (e.g. frame or context closed).
+    - Target closed (e.g. page or browser context closed).
+    - Navigation interrupted (e.g. new navigation or reload during extraction).
+  - **Non-retryable**: Do not retry on permanent failures (e.g. selector timeout, assertion failure, invalid state). Log and fail the page.
+  - **Retry flow** (when a trigger is hit on attempt 1):
+    1. Short **wait_for_page_ready** (same readiness criteria as initial ready, bounded timeout).
+    2. **Optional popup pass**: Run one popup detection + safe-dismiss pass (with settle delay after each dismiss).
+    3. **Overlay fallback**: If blocked-page detection applies, run overlay hide fallback once, then apply settle delay.
+    4. **Retry extraction**: Run extraction (screenshots, visible text, features, HTML) again. If this attempt fails (including with a retryable error), do not retry again; fail the page.
+  - **Max attempts**: 2 (initial + 1 retry). No further retries after the first retry.
+  - **Logging**: For each extraction retry, log `event_type: retry` with: `reason` (e.g. `execution_context_destroyed`, `target_closed`, `navigation_interrupted`), `attempt` (2 on retry), `page_type`, `viewport`, and session context. Include in crawl_logs and session log export.
 
 - **Timeouts**
   - Soft timeouts for wait conditions (continue with warning).

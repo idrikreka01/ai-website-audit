@@ -36,6 +36,8 @@ from worker.crawl import (
     extract_pdp_candidate_links,
     navigate_with_retry,
     normalize_whitespace,
+    run_extraction_retry_prep,
+    run_overlay_hide_fallback,
     scroll_sequence,
     wait_for_page_ready,
 )
@@ -44,6 +46,28 @@ from worker.low_confidence import evaluate_low_confidence, evaluate_low_confiden
 from worker.repository import AuditRepository
 
 logger = get_logger(__name__)
+
+# Transient Playwright errors that allow one extraction retry (TECH_SPEC §5 v1.24)
+_EXTRACTION_RETRY_PHRASES = [
+    ("Execution context was destroyed", "execution_context_destroyed"),
+    ("Target closed", "target_closed"),
+    ("Navigation interrupted", "navigation_interrupted"),
+]
+
+
+def _is_transient_extraction_error(exc: BaseException) -> bool:
+    """True if the exception is a transient error that allows one extraction retry."""
+    msg = str(exc)
+    return any(phrase.lower() in msg.lower() for phrase, _ in _EXTRACTION_RETRY_PHRASES)
+
+
+def _transient_extraction_reason(exc: BaseException) -> str:
+    """Return the reason string for logging; use 'transient' if no known phrase matches."""
+    msg = str(exc).lower()
+    for phrase, reason in _EXTRACTION_RETRY_PHRASES:
+        if phrase.lower() in msg:
+            return reason
+    return "transient"
 
 
 def _log_popup_events(
@@ -78,6 +102,9 @@ def _log_popup_events(
         }
         if ev.get("timestamp"):
             details["timestamp"] = ev["timestamp"]
+        for key in ("hidden_count", "frame_count", "scroll_locked", "click_blocked", "current_url"):
+            if key in ev:
+                details[key] = ev[key]
         repository.create_log(
             session_id=session_id,
             level=level,
@@ -301,6 +328,12 @@ async def crawl_homepage_viewport(
                 },
             )
 
+        # Last-resort overlay hide fallback (TECH_SPEC §5 v1.23): only when page still blocked
+        overlay_fallback_events = await run_overlay_hide_fallback(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, overlay_fallback_events
+        )
+
         if page_type == "homepage" and viewport == "desktop":
             pdp_candidate_urls = await extract_pdp_candidate_links(
                 page, url, max_candidates=MAX_PDP_CANDIDATES
@@ -313,72 +346,145 @@ async def crawl_homepage_viewport(
                 sample=pdp_candidate_urls[:5],
             )
 
-        visible_text = await page.inner_text("body")
-        visible_text = normalize_whitespace(visible_text)
-        text_length = len(visible_text)
+        extraction_attempt = 1
+        while True:
+            try:
+                visible_text = await page.inner_text("body")
+                visible_text = normalize_whitespace(visible_text)
+                text_length = len(visible_text)
 
-        features = await extract_features_json(page)
-        has_h1 = len(features["headings"]["h1"]) > 0
-        has_primary_cta = len(features["ctas"]) > 0
+                features = await extract_features_json(page)
+                has_h1 = len(features["headings"]["h1"]) > 0
+                has_primary_cta = len(features["ctas"]) > 0
 
-        try:
-            screenshot_bytes = await page.screenshot(type="png", full_page=True)
-            screenshot_failed = False
-            screenshot_blank = len(screenshot_bytes) < 1000
-        except Exception as e:
-            screenshot_bytes = None
-            screenshot_failed = True
-            logger.warning(
-                "screenshot_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+                try:
+                    screenshot_bytes = await page.screenshot(type="png", full_page=True)
+                    screenshot_failed = False
+                    screenshot_blank = len(screenshot_bytes) < 1000
+                except Exception as e:
+                    screenshot_bytes = None
+                    screenshot_failed = True
+                    logger.warning(
+                        "screenshot_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
 
-        low_confidence, low_confidence_reasons = evaluate_low_confidence(
-            has_h1=has_h1,
-            has_primary_cta=has_primary_cta,
-            visible_text_length=text_length,
-            screenshot_failed=screenshot_failed,
-            screenshot_blank=screenshot_blank,
-        )
-
-        store_html = should_store_html(first_time, mode, low_confidence, error_summary)
-
-        if store_html:
-            logger.info(
-                "html_storage_triggered",
-                first_time=first_time,
-                mode=mode,
-                low_confidence=low_confidence,
-                has_error=error_summary is not None,
-            )
-
-        artifacts_saved = []
-
-        name = save_screenshot(
-            repository, session_id, page_id, page_type, viewport, domain, screenshot_bytes
-        )
-        if name:
-            artifacts_saved.append(name)
-
-        artifacts_saved.append(
-            save_visible_text(
-                repository, session_id, page_id, page_type, viewport, domain, visible_text
-            )
-        )
-        artifacts_saved.append(
-            save_features_json(
-                repository, session_id, page_id, page_type, viewport, domain, features
-            )
-        )
-
-        if store_html:
-            html_content = await page.content()
-            artifacts_saved.append(
-                save_html_gz(
-                    repository, session_id, page_id, page_type, viewport, domain, html_content
+                low_confidence, low_confidence_reasons = evaluate_low_confidence(
+                    has_h1=has_h1,
+                    has_primary_cta=has_primary_cta,
+                    visible_text_length=text_length,
+                    screenshot_failed=screenshot_failed,
+                    screenshot_blank=screenshot_blank,
                 )
-            )
+
+                store_html = should_store_html(first_time, mode, low_confidence, error_summary)
+
+                if store_html:
+                    logger.info(
+                        "html_storage_triggered",
+                        first_time=first_time,
+                        mode=mode,
+                        low_confidence=low_confidence,
+                        has_error=error_summary is not None,
+                    )
+
+                artifacts_saved = []
+
+                name = save_screenshot(
+                    repository,
+                    session_id,
+                    page_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    screenshot_bytes,
+                )
+                if name:
+                    artifacts_saved.append(name)
+
+                artifacts_saved.append(
+                    save_visible_text(
+                        repository,
+                        session_id,
+                        page_id,
+                        page_type,
+                        viewport,
+                        domain,
+                        visible_text,
+                    )
+                )
+                artifacts_saved.append(
+                    save_features_json(
+                        repository,
+                        session_id,
+                        page_id,
+                        page_type,
+                        viewport,
+                        domain,
+                        features,
+                    )
+                )
+
+                if store_html:
+                    html_content = await page.content()
+                    artifacts_saved.append(
+                        save_html_gz(
+                            repository,
+                            session_id,
+                            page_id,
+                            page_type,
+                            viewport,
+                            domain,
+                            html_content,
+                        )
+                    )
+
+                break
+            except Exception as e:
+                if not _is_transient_extraction_error(e) or extraction_attempt >= 2:
+                    raise
+                reason = _transient_extraction_reason(e)
+                repository.create_log(
+                    session_id=session_id,
+                    level="info",
+                    event_type="retry",
+                    message="Extraction retry",
+                    details={
+                        "reason": reason,
+                        "attempt": 2,
+                        "page_type": page_type,
+                        "viewport": viewport,
+                        "domain": domain,
+                    },
+                )
+                logger.info(
+                    "extraction_retry",
+                    reason=reason,
+                    attempt=2,
+                    page_type=page_type,
+                    viewport=viewport,
+                    session_id=str(session_id),
+                    domain=domain,
+                )
+                popup_events_r, overlay_events_r = await run_extraction_retry_prep(page)
+                _log_popup_events(
+                    repository,
+                    session_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    popup_events_r,
+                )
+                _log_popup_events(
+                    repository,
+                    session_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    overlay_events_r,
+                )
+                extraction_attempt += 1
 
         repository.update_page(
             page_id,
@@ -614,87 +720,169 @@ async def crawl_pdp_viewport(
                 },
             )
 
-        visible_text = await page.inner_text("body")
-        visible_text = normalize_whitespace(visible_text)
-        text_length = len(visible_text)
-
-        features = await extract_features_json_pdp(page)
-        has_h1 = len(features["headings"]["h1"]) > 0
-        has_primary_cta = len(features["ctas"]) > 0
-        pdp_core = features.get("pdp_core", {})
-        has_price = bool(
-            pdp_core.get("price")
-            or await page.locator(
-                "[class*='price'], [data-price], [itemprop='price']"
-            ).first.count()
-            > 0
-        )
-        has_add_to_cart = bool(pdp_core.get("add_to_cart_present"))
-
-        try:
-            screenshot_bytes = await page.screenshot(type="png", full_page=True)
-            screenshot_blank = len(screenshot_bytes) < 1000
-        except Exception as e:
-            screenshot_bytes = None
-            screenshot_failed = True
-            logger.warning(
-                "screenshot_failed",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        low_confidence, low_confidence_reasons = evaluate_low_confidence_pdp(
-            has_h1=has_h1,
-            has_primary_cta=has_primary_cta,
-            has_price=has_price,
-            has_add_to_cart=has_add_to_cart,
-            visible_text_length=text_length,
-            screenshot_failed=screenshot_failed,
-            screenshot_blank=screenshot_blank,
-        )
-        logger.info(
-            "low_confidence_evaluated",
-            page_type=page_type,
-            viewport=viewport,
-            low_confidence=low_confidence,
-            reasons=low_confidence_reasons,
-        )
-        repository.create_log(
-            session_id=session_id,
-            level="info",
-            event_type="navigation",
-            message="Low confidence evaluated",
-            details={"low_confidence": low_confidence, "reasons": low_confidence_reasons},
+        # Last-resort overlay hide fallback (TECH_SPEC §5 v1.23): only when page still blocked
+        overlay_fallback_events = await run_overlay_hide_fallback(page)
+        _log_popup_events(
+            repository, session_id, page_type, viewport, domain, overlay_fallback_events
         )
 
-        store_html = should_store_html(first_time, mode, low_confidence, error_summary)
+        extraction_attempt = 1
+        while True:
+            try:
+                visible_text = await page.inner_text("body")
+                visible_text = normalize_whitespace(visible_text)
+                text_length = len(visible_text)
 
-        artifacts_saved: list[str] = []
-
-        name = save_screenshot(
-            repository, session_id, page_id, page_type, viewport, domain, screenshot_bytes
-        )
-        if name:
-            artifacts_saved.append(name)
-
-        artifacts_saved.append(
-            save_visible_text(
-                repository, session_id, page_id, page_type, viewport, domain, visible_text
-            )
-        )
-        artifacts_saved.append(
-            save_features_json(
-                repository, session_id, page_id, page_type, viewport, domain, features
-            )
-        )
-
-        if store_html:
-            html_content = await page.content()
-            artifacts_saved.append(
-                save_html_gz(
-                    repository, session_id, page_id, page_type, viewport, domain, html_content
+                features = await extract_features_json_pdp(page)
+                has_h1 = len(features["headings"]["h1"]) > 0
+                has_primary_cta = len(features["ctas"]) > 0
+                pdp_core = features.get("pdp_core", {})
+                has_price = bool(
+                    pdp_core.get("price")
+                    or await page.locator(
+                        "[class*='price'], [data-price], [itemprop='price']"
+                    ).first.count()
+                    > 0
                 )
-            )
+                has_add_to_cart = bool(pdp_core.get("add_to_cart_present"))
+
+                try:
+                    screenshot_bytes = await page.screenshot(type="png", full_page=True)
+                    screenshot_blank = len(screenshot_bytes) < 1000
+                except Exception as e:
+                    screenshot_bytes = None
+                    screenshot_failed = True
+                    logger.warning(
+                        "screenshot_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+
+                low_confidence, low_confidence_reasons = evaluate_low_confidence_pdp(
+                    has_h1=has_h1,
+                    has_primary_cta=has_primary_cta,
+                    has_price=has_price,
+                    has_add_to_cart=has_add_to_cart,
+                    visible_text_length=text_length,
+                    screenshot_failed=screenshot_failed,
+                    screenshot_blank=screenshot_blank,
+                )
+                logger.info(
+                    "low_confidence_evaluated",
+                    page_type=page_type,
+                    viewport=viewport,
+                    low_confidence=low_confidence,
+                    reasons=low_confidence_reasons,
+                )
+                repository.create_log(
+                    session_id=session_id,
+                    level="info",
+                    event_type="navigation",
+                    message="Low confidence evaluated",
+                    details={
+                        "low_confidence": low_confidence,
+                        "reasons": low_confidence_reasons,
+                    },
+                )
+
+                store_html = should_store_html(first_time, mode, low_confidence, error_summary)
+
+                artifacts_saved = []
+
+                name = save_screenshot(
+                    repository,
+                    session_id,
+                    page_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    screenshot_bytes,
+                )
+                if name:
+                    artifacts_saved.append(name)
+
+                artifacts_saved.append(
+                    save_visible_text(
+                        repository,
+                        session_id,
+                        page_id,
+                        page_type,
+                        viewport,
+                        domain,
+                        visible_text,
+                    )
+                )
+                artifacts_saved.append(
+                    save_features_json(
+                        repository,
+                        session_id,
+                        page_id,
+                        page_type,
+                        viewport,
+                        domain,
+                        features,
+                    )
+                )
+
+                if store_html:
+                    html_content = await page.content()
+                    artifacts_saved.append(
+                        save_html_gz(
+                            repository,
+                            session_id,
+                            page_id,
+                            page_type,
+                            viewport,
+                            domain,
+                            html_content,
+                        )
+                    )
+
+                break
+            except Exception as e:
+                if not _is_transient_extraction_error(e) or extraction_attempt >= 2:
+                    raise
+                reason = _transient_extraction_reason(e)
+                repository.create_log(
+                    session_id=session_id,
+                    level="info",
+                    event_type="retry",
+                    message="Extraction retry",
+                    details={
+                        "reason": reason,
+                        "attempt": 2,
+                        "page_type": page_type,
+                        "viewport": viewport,
+                        "domain": domain,
+                    },
+                )
+                logger.info(
+                    "extraction_retry",
+                    reason=reason,
+                    attempt=2,
+                    page_type=page_type,
+                    viewport=viewport,
+                    session_id=str(session_id),
+                    domain=domain,
+                )
+                popup_events_r, overlay_events_r = await run_extraction_retry_prep(page)
+                _log_popup_events(
+                    repository,
+                    session_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    popup_events_r,
+                )
+                _log_popup_events(
+                    repository,
+                    session_id,
+                    page_type,
+                    viewport,
+                    domain,
+                    overlay_events_r,
+                )
+                extraction_attempt += 1
 
         repository.update_page(
             page_id,
@@ -755,7 +943,7 @@ async def crawl_pdp_async(
     Returns dict with viewport results: {"desktop": {...}, "mobile": {...}}.
     """
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=False)
         results = {}
         for pt, viewport in PDP_VIEWPORTS:
             success, page_data = await crawl_pdp_viewport(
@@ -785,7 +973,7 @@ async def crawl_homepage_async(
     Returns dict with viewport results.
     """
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(headless=False)
 
         results = {}
         for page_type, viewport in HOMEPAGE_VIEWPORTS:

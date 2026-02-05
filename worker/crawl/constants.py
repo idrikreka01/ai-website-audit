@@ -347,7 +347,10 @@ POPUP_CONTAINER_SELECTORS = (
 MAX_DISMISSALS_PER_PASS = 5
 POPUP_VISIBILITY_TIMEOUT_MS = 1000
 POPUP_CLICK_TIMEOUT_MS = 2000
-POPUP_SETTLE_AFTER_DISMISS_MS = 200
+# Settle delay after each popup dismiss click (TECH_SPEC §5 v1.24)
+POPUP_SETTLE_AFTER_DISMISS_MS = 750
+# Settle delay after overlay hide fallback, before extraction (TECH_SPEC §5 v1.24)
+OVERLAY_HIDE_SETTLE_MS = 750
 
 # Safe dismiss keywords (button/link text); minimal set for deterministic matching.
 # Only elements whose normalized text matches one of these are considered safe to click.
@@ -387,3 +390,11 @@ RISKY_CTA_KEYWORDS = frozenset(
         "subscribe",  # newsletter subscribe CTA, not dismiss
     ]
 )
+
+# --- Blocked-page detection (TECH_SPEC_V1.1.md §5 Last-resort overlay hide fallback v1.23) ---
+# Overlay heuristic: min viewport coverage ratio (e.g. >40%)
+BLOCKED_PAGE_OVERLAY_MIN_VIEWPORT_RATIO = 0.4
+# Overlay heuristic: min z-index (above main content layer)
+BLOCKED_PAGE_OVERLAY_MIN_Z_INDEX = 10
+# Structural nodes never hidden by overlay-hide fallback
+BLOCKED_PAGE_OVERLAY_HIDE_EXCLUDE_TAGS = ("html", "body", "main", "header", "nav", "footer")
