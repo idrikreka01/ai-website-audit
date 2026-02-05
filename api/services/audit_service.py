@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 # Current crawl policy version (hardcoded for MVP; can be made configurable later).
 # v1.22: Popup logging records only dismiss events (success/failure).
-CRAWL_POLICY_VERSION = "v1.22"
+CRAWL_POLICY_VERSION = "v1.24"
 
 
 def normalize_url(url: str) -> str:

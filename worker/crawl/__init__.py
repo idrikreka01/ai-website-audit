@@ -10,6 +10,11 @@ Public API: re-exports all symbols used by jobs.py and tests so that
 
 from __future__ import annotations
 
+from worker.crawl.blocked_page import (
+    BlockedPageResult,
+    detect_blocked_page,
+    is_page_blocked,
+)
 from worker.crawl.browser import create_browser_context
 from worker.crawl.consent import (
     DEFAULT_VENDORS,
@@ -25,6 +30,7 @@ from worker.crawl.constants import (
     MAX_SCROLL_STEPS,
     MINIMUM_WAIT_AFTER_LOAD,
     NETWORK_IDLE_TIMEOUT,
+    OVERLAY_HIDE_SETTLE_MS,
     PDP_PATH_PATTERNS,
     POST_SCROLL_SETTLE_MS,
     PRODUCT_LIKE_CONTAINER_SELECTORS,
@@ -60,7 +66,13 @@ from worker.crawl.pdp_validation import (
     extract_pdp_validation_signals,
     is_valid_pdp_page,
 )
-from worker.crawl.readiness import dismiss_popups, scroll_sequence, wait_for_page_ready
+from worker.crawl.readiness import (
+    dismiss_popups,
+    run_extraction_retry_prep,
+    run_overlay_hide_fallback,
+    scroll_sequence,
+    wait_for_page_ready,
+)
 from worker.crawl.text import normalize_whitespace
 
 __all__ = [
@@ -77,6 +89,7 @@ __all__ = [
     "MAX_SCROLL_STEPS",
     "SCROLL_BOTTOM_WAIT_MS",
     "POST_SCROLL_SETTLE_MS",
+    "OVERLAY_HIDE_SETTLE_MS",
     "EXCLUDED_PATH_SEGMENTS",
     "MAX_PDP_CANDIDATES",
     "PDP_PATH_PATTERNS",
@@ -91,10 +104,16 @@ __all__ = [
     "NavigateResult",
     "navigate_with_retry",
     "is_bot_block_page",
+    # blocked_page (v1.23 overlay hide fallback)
+    "BlockedPageResult",
+    "detect_blocked_page",
+    "is_page_blocked",
     # readiness
     "wait_for_page_ready",
     "scroll_sequence",
     "dismiss_popups",
+    "run_extraction_retry_prep",
+    "run_overlay_hide_fallback",
     # text
     "normalize_whitespace",
     # pdp_candidates

@@ -64,7 +64,7 @@ async def run_pdp_discovery_and_validation(
         return None
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        browser = await pw.chromium.launch(headless=False)
         context = await create_browser_context(browser, "desktop")
         try:
             for pdp_url in candidate_urls:
