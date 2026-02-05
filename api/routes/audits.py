@@ -116,6 +116,7 @@ def get_audit(
 
     session = service.get_audit_session(session_id)
     if session is None:
+        # Do not write to crawl_logs: session_id is not in audit_sessions (FK would fail).
         logger.warning("audit_session_not_found", session_id=str(session_id))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -146,6 +147,7 @@ def get_audit_artifacts(
 
     artifacts = service.get_audit_artifacts(session_id)
     if artifacts is None:
+        # Do not write to crawl_logs: session_id is not in audit_sessions (FK would fail).
         logger.warning("audit_session_not_found_for_artifacts", session_id=str(session_id))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

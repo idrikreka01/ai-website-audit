@@ -34,14 +34,11 @@ HARD_PAGE_TIMEOUT_MS = 90_000
 # Bot-block: wait 2 s then one reload
 BOT_BLOCK_WAIT_SECONDS = 2
 
-# Substrings that indicate challenge/captcha/block (case-insensitive)
-BOT_BLOCK_INDICATORS = (
-    "challenge",
+# Highest-confidence substrings that indicate bot-block (case-insensitive)
+BOT_BLOCK_STRONG_INDICATORS = (
     "captcha",
     "verify you are human",
-    "access denied",
-    "blocked",
-    "bot",
+    "ddos protection",
 )
 
 
@@ -100,7 +97,14 @@ async def is_bot_block_page(page: Page) -> bool:
         title = await page.title()
         body_text = await page.inner_text("body")
         combined = f"{title} {body_text}".lower()
-        return any(ind in combined for ind in BOT_BLOCK_INDICATORS)
+        for ind in BOT_BLOCK_STRONG_INDICATORS:
+            if ind in combined:
+                logger.info(
+                    "bot_block_detected",
+                    matched_indicator=ind,
+                )
+                return True
+        return False
     except Exception:
         return False
 

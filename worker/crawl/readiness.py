@@ -18,11 +18,14 @@ from shared.logging import get_logger
 from worker.crawl.constants import (
     DOM_STABILITY_TIMEOUT,
     MAX_DISMISSALS_PER_PASS,
+    MAX_SCROLL_STEPS,
     MINIMUM_WAIT_AFTER_LOAD,
     POPUP_CLICK_TIMEOUT_MS,
     POPUP_CONTAINER_SELECTORS,
     POPUP_SETTLE_AFTER_DISMISS_MS,
     POPUP_VISIBILITY_TIMEOUT_MS,
+    SCROLL_BOTTOM_WAIT_MS,
+    SCROLL_STEP_RATIO,
     SCROLL_WAIT,
 )
 from worker.crawl.popup_rules import (
@@ -102,19 +105,27 @@ async def wait_for_page_ready(
 
 async def scroll_sequence(page: Page) -> None:
     """
-    Perform scroll sequence: top → mid → bottom → top.
+    Perform scroll sequence with incremental steps down the page, then back to top.
 
-    Includes short waits after each scroll to allow lazy elements to load.
+    Includes waits after each step and a bottom dwell to allow lazy elements to load.
     """
     viewport_height = page.viewport_size["height"] if page.viewport_size else 800
+    step_px = max(200, int(viewport_height * SCROLL_STEP_RATIO))
 
-    # Scroll to mid
-    await page.evaluate(f"window.scrollTo(0, {viewport_height})")
-    await asyncio.sleep(SCROLL_WAIT / 1000)
+    # Incremental scroll down to bottom (bounded).
+    for step in range(MAX_SCROLL_STEPS):
+        y = step * step_px
+        await page.evaluate(f"window.scrollTo(0, {y})")
+        await asyncio.sleep(SCROLL_WAIT / 1000)
+        at_bottom = await page.evaluate(
+            "window.innerHeight + window.scrollY >= document.body.scrollHeight"
+        )
+        if at_bottom:
+            break
 
-    # Scroll to bottom
+    # Ensure bottom and dwell for lazy loads.
     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-    await asyncio.sleep(SCROLL_WAIT / 1000)
+    await asyncio.sleep(SCROLL_BOTTOM_WAIT_MS / 1000)
 
     # Scroll back to top
     await page.evaluate("window.scrollTo(0, 0)")
@@ -184,9 +195,10 @@ async def dismiss_popups(page: Page) -> list[dict]:
     Per TECH_SPEC_V1.1.md §5 Popup Handling Policy v1.6.
 
     Returns a list of popup events for DB logging. Each event has selector,
-    action (dismiss_click | detected_ignored | not_found), result (success |
-    failure | skipped), and attempt (1-based). Caller should write each to DB
-    with event_type=popup and context (session_id, page_type, viewport, domain).
+    action (dismiss_click), result (success | failure), and attempt (1-based).
+    Selector-miss events and detected-ignored events are not logged. Caller
+    should write each to DB with event_type=popup and context (session_id,
+    page_type, viewport, domain).
     """
     events: list[dict] = []
     dismissed_count = 0
@@ -198,7 +210,6 @@ async def dismiss_popups(page: Page) -> list[dict]:
             try:
                 element = page.locator(selector).first
                 if not await element.is_visible(timeout=POPUP_VISIBILITY_TIMEOUT_MS):
-                    events.append(_popup_event(selector, "not_found", "skipped", attempt_one_based))
                     continue
                 text = await _element_dismiss_text(element)
                 if is_risky_cta_text(text):
@@ -208,9 +219,6 @@ async def dismiss_popups(page: Page) -> list[dict]:
                         reason="risky_cta",
                         text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
                     )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
-                    )
                     continue
                 if not is_safe_dismiss_text(text):
                     logger.debug(
@@ -219,9 +227,6 @@ async def dismiss_popups(page: Page) -> list[dict]:
                         reason="not_safe_dismiss",
                         text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
                     )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
-                    )
                     continue
                 if not await _is_within_popup_container(element):
                     logger.debug(
@@ -229,9 +234,6 @@ async def dismiss_popups(page: Page) -> list[dict]:
                         selector=selector,
                         reason="outside_container",
                         text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
-                    )
-                    events.append(
-                        _popup_event(selector, "detected_ignored", "skipped", attempt_one_based)
                     )
                     continue
                 await element.click(timeout=POPUP_CLICK_TIMEOUT_MS)

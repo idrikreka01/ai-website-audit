@@ -24,9 +24,8 @@ from shared.logging import get_logger
 logger = get_logger(__name__)
 
 # Current crawl policy version (hardcoded for MVP; can be made configurable later).
-# v1.1: PDP-not-found with homepage success → session status partial.
-# v1.2: PDP validation tightened — (price + title+image) plus (add-to-cart or product schema).
-CRAWL_POLICY_VERSION = "v1.2"
+# v1.22: Popup logging records only dismiss events (success/failure).
+CRAWL_POLICY_VERSION = "v1.22"
 
 
 def normalize_url(url: str) -> str:
@@ -105,25 +104,42 @@ class AuditService:
             crawl_policy_version=CRAWL_POLICY_VERSION,
             config_snapshot=config_snapshot,
         )
+        session_id = session_data["id"]
 
+        self.repository.create_log(
+            session_id=session_id,
+            level="info",
+            event_type="artifact",
+            message="API: session created",
+            details={"api_event": "session_created", "url": normalized_url, "mode": mode},
+        )
         logger.info(
             "audit_session_created",
-            session_id=str(session_data["id"]),
+            session_id=str(session_id),
             url=normalized_url,
             mode=mode,
         )
 
         # Enqueue job in Redis queue
         try:
-            enqueue_audit_job(session_data["id"], normalized_url)
+            enqueue_audit_job(session_id, normalized_url)
         except Exception as e:
-            # Log the error but don't fail the request - the session is created
-            # and can be retried manually if needed
+            self.repository.create_log(
+                session_id=session_id,
+                level="error",
+                event_type="error",
+                message="API: job enqueue failed after session creation",
+                details={
+                    "api_event": "enqueue_failed",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
             logger.error(
                 "job_enqueue_failed_after_session_creation",
                 error=str(e),
                 error_type=type(e).__name__,
-                session_id=str(session_data["id"]),
+                session_id=str(session_id),
             )
             # Re-raise to let the route handler return an appropriate error
             raise
@@ -143,6 +159,14 @@ class AuditService:
         session_data = self.repository.get_session_by_id(session_id)
         if session_data is None:
             return None
+
+        self.repository.create_log(
+            session_id=session_id,
+            level="info",
+            event_type="artifact",
+            message="API: session retrieved",
+            details={"api_event": "session_retrieved"},
+        )
 
         # Fetch associated pages
         pages_data = self.repository.get_pages_by_session_id(session_id)
@@ -191,6 +215,14 @@ class AuditService:
 
         # Fetch artifacts
         artifacts_data = self.repository.get_artifacts_by_session_id(session_id)
+
+        self.repository.create_log(
+            session_id=session_id,
+            level="info",
+            event_type="artifact",
+            message="API: artifacts listed",
+            details={"api_event": "artifacts_retrieved", "artifact_count": len(artifacts_data)},
+        )
 
         artifacts = [
             ArtifactResponse(

@@ -15,7 +15,7 @@ The schema is implemented via Alembic migrations in `migrations/`.
 - `page_type_enum`: `homepage`, `pdp`
 - `viewport_enum`: `desktop`, `mobile`
 - `page_status_enum`: `ok`, `failed`, `pending`
-- `artifact_type_enum`: `screenshot`, `visible_text`, `features_json`, `html_gz`
+- `artifact_type_enum`: `screenshot`, `visible_text`, `features_json`, `html_gz`, `session_logs_jsonl`
 - `log_level_enum`: `info`, `warn`, `error`
 - `event_type_enum`: `navigation`, `popup`, `retry`, `timeout`, `error`, `artifact`
 
@@ -59,7 +59,7 @@ Indexes:
 
 - `id` (`uuid`, PK)
 - `session_id` (`uuid`, FK → `audit_sessions.id` ON DELETE CASCADE)
-- `page_id` (`uuid`, FK → `audit_pages.id` ON DELETE CASCADE)
+- `page_id` (`uuid`, FK → `audit_pages.id` ON DELETE CASCADE, nullable for session-level artifacts e.g. `session_logs_jsonl`)
 - `type` (`artifact_type_enum`, not null)
 - `storage_uri` (`text`, not null) — URI or path to artifact in external storage
 - `size_bytes` (`bigint`, not null)

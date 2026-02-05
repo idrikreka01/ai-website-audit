@@ -2,10 +2,13 @@
 
 ## Overview
 
-This repository contains the scaffolding for the **AI-powered website audit** project.
+This repository contains the **AI-powered website audit** project.
 The goal of this stage is to provide a clean, two-service layout with shared
-configuration and structured logging, without implementing any crawling logic,
-endpoints, database models, or queueing behavior yet.
+configuration and structured logging, plus a working worker crawler for evidence
+capture.
+
+Source of truth:
+- The authoritative spec is always the latest `docs/TECH_SPEC_*.md`.
 
 Services:
 - `api/` — FastAPI-based orchestration service (request handling, session lifecycle).
@@ -53,9 +56,8 @@ or reimplementing config parsing.
    export PYTHONPATH="$(cd .. && pwd)"
    ```
 
-4. (Placeholder) Start the API server:
+4. Start the API server:
    ```bash
-   # Actual FastAPI app entrypoint will be added in a later task.
    uvicorn api.main:app --reload  # Placeholder target
    ```
 
@@ -81,9 +83,8 @@ or reimplementing config parsing.
    export PYTHONPATH="$(cd .. && pwd)"
    ```
 
-5. (Placeholder) Start the worker process:
+5. Start the worker process:
    ```bash
-   # Actual worker entrypoint and queue consumption logic will be added later.
    python -m worker.main  # Placeholder target
    ```
 
@@ -141,11 +142,11 @@ To verify the worker can crawl a homepage and PDP on a live e-commerce site:
    curl http://localhost:8000/audits/{session_id}
    ```
 
-4. Verify artifacts were created for all 4 pages:
-   - **Homepage:** `./artifacts/{session_id}/homepage/desktop/` and `./artifacts/{session_id}/homepage/mobile/`
-   - **PDP (if discovered):** `./artifacts/{session_id}/pdp/desktop/` and `./artifacts/{session_id}/pdp/mobile/`
-   - Each directory should contain: `screenshot.png`, `visible_text.txt`, `features_json.json`
-   - `html_gz.html.gz` may be present when conditional rules apply (first_time, low_confidence, debug, or failure)
+4. Verify artifacts were created for all 4 pages (domain-first naming per TECH_SPEC v1.20):
+   - **Homepage:** `./artifacts/{domain}__{session_id}/homepage/desktop/` and `./artifacts/{domain}__{session_id}/homepage/mobile/`
+   - **PDP (if discovered):** `./artifacts/{domain}__{session_id}/pdp/desktop/` and `./artifacts/{domain}__{session_id}/pdp/mobile/`
+   - Each page directory contains: `screenshot.png`, `visible_text.txt`, `features_json.json`, and `html_gz.html.gz` (HTML has short retention).
+   - **Session log:** `./artifacts/{domain}__{session_id}/session_logs.jsonl` is always written at the end of each run (crawl_logs export); it appears in the artifact list for the session.
 
 5. PDP success criteria:
    - Session status `completed` when all 4 pages (homepage desktop/mobile + PDP desktop/mobile) succeed.

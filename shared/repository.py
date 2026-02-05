@@ -96,6 +96,20 @@ class AuditRepository:
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
 
+    def get_logs_by_session_id(self, session_id: UUID) -> list[dict]:
+        """
+        Get all crawl_logs for a session in stable order (timestamp, then id).
+
+        Returns a list of log dicts for export to session_logs.jsonl.
+        """
+        stmt = (
+            select(self.logs_table)
+            .where(self.logs_table.c.session_id == session_id)
+            .order_by(self.logs_table.c.timestamp.asc(), self.logs_table.c.id.asc())
+        )
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
     def get_artifacts_by_session_id(self, session_id: UUID) -> list[dict]:
         """
         Get all artifacts for a session.
@@ -226,7 +240,7 @@ class AuditRepository:
         self,
         *,
         session_id: UUID,
-        page_id: UUID,
+        page_id: Optional[UUID] = None,
         artifact_type: str,
         storage_uri: str,
         size_bytes: int,
@@ -236,6 +250,7 @@ class AuditRepository:
         """
         Create an artifact record.
 
+        page_id is optional for session-level artifacts (e.g. session_logs_jsonl).
         Returns the created artifact as a dict.
         """
         from uuid import uuid4

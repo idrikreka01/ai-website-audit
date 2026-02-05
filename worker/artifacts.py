@@ -17,9 +17,11 @@ from shared.logging import get_logger
 from worker.repository import AuditRepository
 from worker.storage import (
     build_artifact_path,
+    build_session_log_artifact_path,
     get_storage_uri,
     write_html_gz,
     write_json,
+    write_jsonl,
     write_screenshot,
     write_text,
 )
@@ -36,14 +38,9 @@ def should_store_html(
     """
     Return True when html.gz should be stored.
 
-    Store when: first_time OR mode in ("debug", "evidence_pack") OR low_confidence OR error.
+    Store always (policy v1.12).
     """
-    return (
-        first_time
-        or mode in ("debug", "evidence_pack")
-        or low_confidence
-        or error_summary is not None
-    )
+    return True
 
 
 def save_screenshot(
@@ -302,3 +299,57 @@ def save_html_gz(
         retention_until=retention_until.isoformat(),
     )
     return "html_gz"
+
+
+def save_session_logs(
+    repository: AuditRepository,
+    session_id: UUID,
+    domain: str,
+) -> bool:
+    """
+    Export crawl_logs for the session to session_logs.jsonl and create artifact record.
+
+    Session-level artifact (no page_id). Does not alter session status on failure:
+    on any exception, logs the error and returns False; caller must not fail the session.
+    Returns True if the artifact was written and the DB record created.
+    """
+    try:
+        logs = repository.get_logs_by_session_id(session_id)
+        path = build_session_log_artifact_path(domain, session_id)
+        size, checksum = write_jsonl(path, logs)
+        storage_uri = get_storage_uri(path)
+        repository.create_artifact(
+            session_id=session_id,
+            page_id=None,
+            artifact_type="session_logs_jsonl",
+            storage_uri=storage_uri,
+            size_bytes=size,
+            checksum=checksum,
+        )
+        logger.info(
+            "session_log_artifact_saved",
+            session_id=str(session_id),
+            storage_uri=storage_uri,
+            size_bytes=size,
+            log_count=len(logs),
+        )
+        return True
+    except Exception as e:
+        logger.error(
+            "session_log_export_failed",
+            session_id=str(session_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="error",
+            event_type="artifact",
+            message="Session log export failed",
+            details={
+                "artifact_type": "session_logs_jsonl",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+        )
+        return False

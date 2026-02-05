@@ -28,6 +28,11 @@ def enqueue_audit_job(session_id: UUID, url: str) -> str:
     redis_conn = redis.from_url(config.redis_url)
     queue = Queue("audit_jobs", connection=redis_conn)
 
-    job = queue.enqueue("worker.jobs.process_audit_job", str(session_id), url)
+    job = queue.enqueue(
+        "worker.jobs.process_audit_job",
+        str(session_id),
+        url,
+        job_timeout=config.audit_job_timeout_seconds,
+    )
     logger.info("audit_job_enqueued", session_id=str(session_id), job_id=job.id, url=url)
     return job.id

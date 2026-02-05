@@ -26,6 +26,7 @@ from worker.crawl import (
     CONSENT_POSITIONING_DELAY_MS,
     DEFAULT_VENDORS,
     MAX_PDP_CANDIDATES,
+    POST_SCROLL_SETTLE_MS,
     add_preconsent_init_scripts,
     apply_preconsent_in_frames,
     create_browser_context,
@@ -148,6 +149,42 @@ async def crawl_homepage_viewport(
                 error_type=type(e).__name__,
             )
         page = await context.new_page()
+        page.on(
+            "crash",
+            lambda: logger.error(
+                "page_crashed",
+                page_type=page_type,
+                viewport=viewport,
+                domain=domain,
+            ),
+        )
+        page.on(
+            "close",
+            lambda: logger.warning(
+                "page_closed",
+                page_type=page_type,
+                viewport=viewport,
+                domain=domain,
+            ),
+        )
+        page.on(
+            "crash",
+            lambda: logger.error(
+                "page_crashed",
+                page_type=page_type,
+                viewport=viewport,
+                domain=domain,
+            ),
+        )
+        page.on(
+            "close",
+            lambda: logger.warning(
+                "page_closed",
+                page_type=page_type,
+                viewport=viewport,
+                domain=domain,
+            ),
+        )
 
         repository.create_log(
             session_id=session_id,
@@ -202,7 +239,11 @@ async def crawl_homepage_viewport(
                 error_type=type(e).__name__,
             )
 
+        logger.info("page_ready_start", page_type=page_type, viewport=viewport, domain=domain)
+        logger.info("page_ready_start", page_type=page_type, viewport=viewport, domain=domain)
         load_timings = await wait_for_page_ready(page, soft_timeout=10000)
+        logger.info("page_ready_end", page_type=page_type, viewport=viewport, domain=domain)
+        logger.info("page_ready_end", page_type=page_type, viewport=viewport, domain=domain)
         repository.create_log(
             session_id=session_id,
             level="info",
@@ -232,6 +273,7 @@ async def crawl_homepage_viewport(
             )
 
         await scroll_sequence(page)
+        await asyncio.sleep(POST_SCROLL_SETTLE_MS / 1000)
         repository.create_log(
             session_id=session_id,
             level="info",
@@ -544,6 +586,7 @@ async def crawl_pdp_viewport(
             )
 
         await scroll_sequence(page)
+        await asyncio.sleep(POST_SCROLL_SETTLE_MS / 1000)
         repository.create_log(
             session_id=session_id,
             level="info",

@@ -1,7 +1,8 @@
 """
 Unit tests for artifact storage path building and naming convention per spec.
 
-Spec: {session_id}__{domain}/{page_type}/{viewport}/{artifact_type}.{ext}
+Spec (v1.20): domain-first {domain}__{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}
+Session-level: {domain}__{session_id}/session_logs.jsonl
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from shared.config import get_config
-from worker.storage import build_artifact_path
+from worker.storage import build_artifact_path, build_session_log_artifact_path
 
 DOMAIN = "example.com"
 
@@ -56,16 +57,16 @@ def test_build_artifact_path_html_gz():
 
 
 def test_build_artifact_path_structure():
-    """Test that path follows the expected directory structure."""
+    """Test that path follows the expected directory structure (domain-first)."""
     session_id = uuid4()
     path = build_artifact_path(session_id, "homepage", "desktop", "screenshot", DOMAIN)
 
     parts = path.parts
-    # Should be: <root>/<session_id>__<domain>/homepage/desktop/screenshot.png
+    # Should be: <root>/<domain>__<session_id>/homepage/desktop/screenshot.png
     assert parts[-1] == "screenshot.png"
     assert parts[-2] == "desktop"
     assert parts[-3] == "homepage"
-    assert parts[-4] == f"{session_id}__{DOMAIN}"
+    assert parts[-4] == f"{DOMAIN}__{session_id}"
 
 
 def test_build_artifact_path_domain_normalization():
@@ -73,13 +74,13 @@ def test_build_artifact_path_domain_normalization():
     session_id = uuid4()
     path = build_artifact_path(session_id, "homepage", "desktop", "screenshot", "WWW.Example.COM")
 
-    assert f"{session_id}__example.com" in str(path)
+    assert f"example.com__{session_id}" in str(path)
 
 
 def test_naming_convention_per_spec():
     """
-    Naming convention per TECH_SPEC:
-    {session_id}__{domain}/{page_type}/{viewport}/{artifact_type}.{ext}
+    Naming convention per TECH_SPEC v1.20 (domain-first):
+    {domain}__{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}
     """
     config = get_config()
     artifacts_root = Path(config.artifacts_dir)
@@ -96,14 +97,14 @@ def test_naming_convention_per_spec():
         assert str(session_id) in str(path)
         assert "homepage" in str(path)
         assert "desktop" in str(path)
-        # Relative path from artifacts root must match spec
+        # Relative path from artifacts root must match spec (domain-first)
         try:
             rel = path.relative_to(artifacts_root)
         except ValueError:
             rel = path
         rel_parts = rel.parts
         assert len(rel_parts) >= 4
-        assert rel_parts[0] == f"{session_id}__{DOMAIN}"
+        assert rel_parts[0] == f"{DOMAIN}__{session_id}"
         assert rel_parts[1] == "homepage"
         assert rel_parts[2] == "desktop"
         assert rel_parts[3] == f"{artifact_type}.{ext}"
@@ -132,24 +133,24 @@ def test_all_artifact_combinations():
 
 
 def test_naming_convention_pdp_mobile():
-    """Test naming convention for PDP mobile artifacts."""
+    """Test naming convention for PDP mobile artifacts (domain-first)."""
     session_id = uuid4()
     path = build_artifact_path(session_id, "pdp", "mobile", "screenshot", DOMAIN)
 
     parts = path.parts
-    assert parts[-4] == f"{session_id}__{DOMAIN}"
+    assert parts[-4] == f"{DOMAIN}__{session_id}"
     assert parts[-3] == "pdp"
     assert parts[-2] == "mobile"
     assert parts[-1] == "screenshot.png"
 
 
 def test_naming_convention_homepage_desktop():
-    """Test naming convention for homepage desktop artifacts."""
+    """Test naming convention for homepage desktop artifacts (domain-first)."""
     session_id = uuid4()
     path = build_artifact_path(session_id, "homepage", "desktop", "visible_text", DOMAIN)
 
     parts = path.parts
-    assert parts[-4] == f"{session_id}__{DOMAIN}"
+    assert parts[-4] == f"{DOMAIN}__{session_id}"
     assert parts[-3] == "homepage"
     assert parts[-2] == "desktop"
     assert parts[-1] == "visible_text.txt"
@@ -296,3 +297,50 @@ def test_four_artifacts_per_session_structure():
 
         # Each artifact type has unique filename
         assert screenshot.name != text.name != features.name != html.name
+
+
+# --- Session-level artifact path (no page_type/viewport) ---
+
+
+def test_build_session_log_artifact_path_structure():
+    """Session-level path helper returns {domain}__{session_id}/session_logs.jsonl."""
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    session_id = uuid4()
+    path = build_session_log_artifact_path(DOMAIN, session_id)
+
+    assert path.name == "session_logs.jsonl"
+    rel = path.relative_to(artifacts_root)
+    assert rel.parts[0] == f"{DOMAIN}__{session_id}"
+    assert rel.parts[1] == "session_logs.jsonl"
+    assert len(rel.parts) == 2
+
+
+def test_build_session_log_artifact_path_domain_normalization():
+    """Session log path uses normalized domain (lowercase, no www)."""
+    session_id = uuid4()
+    path = build_session_log_artifact_path("WWW.Example.COM", session_id)
+
+    assert f"example.com__{session_id}" in str(path)
+    assert path.name == "session_logs.jsonl"
+
+
+def test_build_session_log_artifact_path_deterministic():
+    """Same domain and session_id produce the same path."""
+    session_id = uuid4()
+    p1 = build_session_log_artifact_path(DOMAIN, session_id)
+    p2 = build_session_log_artifact_path(DOMAIN, session_id)
+    assert p1 == p2
+
+
+def test_session_log_path_under_same_root_as_page_artifacts():
+    """Session log lives under same session root as page-level artifacts."""
+    session_id = uuid4()
+    page_path = build_artifact_path(session_id, "homepage", "desktop", "screenshot", DOMAIN)
+    session_log_path = build_session_log_artifact_path(DOMAIN, session_id)
+
+    # Same root directory (domain__session_id)
+    page_root = page_path.parent.parent.parent
+    session_log_root = session_log_path.parent
+    assert page_root == session_log_root
+    assert session_log_path.name == "session_logs.jsonl"
