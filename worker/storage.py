@@ -10,8 +10,9 @@ from __future__ import annotations
 import gzip
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from shared.config import get_config
@@ -32,9 +33,9 @@ def build_artifact_path(
     domain: str,
 ) -> Path:
     """
-    Build the artifact file path per naming convention.
+    Build the artifact file path per naming convention (v1.20: domain-first).
 
-    Convention: {session_id}__{domain}/{page_type}/{viewport}/{artifact_type}.{ext}
+    Convention: {domain}__{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}
 
     Artifacts at the same path are overwritten deterministically (no skip-if-exists).
     Returns a Path object (does not create the file or directory).
@@ -42,7 +43,6 @@ def build_artifact_path(
     config = get_config()
     artifacts_root = Path(config.artifacts_dir)
 
-    # Determine file extension
     ext_map = {
         "screenshot": "png",
         "visible_text": "txt",
@@ -51,11 +51,29 @@ def build_artifact_path(
     }
     ext = ext_map[artifact_type]
 
-    normalized_domain = _normalize_domain(domain)
-    root_name = f"{session_id}__{normalized_domain}"
+    root_name = _artifact_root_name(domain, session_id)
     path = artifacts_root / root_name / page_type / viewport / f"{artifact_type}.{ext}"
 
     return path
+
+
+def build_session_log_artifact_path(domain: str, session_id: UUID) -> Path:
+    """
+    Build the path for the session-level log artifact (no page_type/viewport).
+
+    Convention: {domain}__{session_id}/session_logs.jsonl
+    Per TECH_SPEC v1.20: session log export uses this path under domain-first naming.
+    """
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    root_name = _artifact_root_name(domain, session_id)
+    return artifacts_root / root_name / "session_logs.jsonl"
+
+
+def _artifact_root_name(domain: str, session_id: UUID) -> str:
+    """Domain-first session root: {domain}__{session_id}."""
+    normalized_domain = _normalize_domain(domain)
+    return f"{normalized_domain}__{session_id}"
 
 
 def _normalize_domain(domain: str) -> str:
@@ -109,6 +127,34 @@ def write_json(path: Path, data: dict) -> tuple[int, str | None]:
     path.write_bytes(json_bytes)
     size = len(json_bytes)
     checksum = hashlib.md5(json_bytes).hexdigest()
+    return size, checksum
+
+
+def _json_default(obj: Any) -> Any:
+    """JSON serializer for datetime and UUID."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, UUID):
+        return str(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def write_jsonl(path: Path, rows: list[dict]) -> tuple[int, str | None]:
+    """
+    Write a list of dicts as JSONL (one JSON object per line, UTF-8).
+
+    Each row is serialized with datetime/UUID converted to ISO string.
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
+    """
+    ensure_artifact_dir(path)
+    lines = []
+    for row in rows:
+        line = json.dumps(row, default=_json_default, ensure_ascii=False) + "\n"
+        lines.append(line)
+    content = "".join(lines).encode("utf-8")
+    path.write_bytes(content)
+    size = len(content)
+    checksum = hashlib.md5(content).hexdigest()
     return size, checksum
 
 

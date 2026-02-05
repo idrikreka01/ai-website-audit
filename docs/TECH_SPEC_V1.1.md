@@ -1,7 +1,7 @@
 # TECH SPEC V1.1 — AI-Powered Website Audit (Merged)
 
 **Version**: 1.1  
-**Status**: Full spec (V1) + operational addendum + PDP validation + popup policy (policy v1.6)
+**Status**: Full spec (V1) + operational addendum + PDP validation + popup policy (policy v1.22)
 
 ---
 
@@ -11,15 +11,27 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 0) Crawl policy version
 
-- **crawl_policy_version**: `v1.8` (pre-consent vendors expanded; see §5).
+- **crawl_policy_version**: `v1.22` (Popup logging: dismiss events only; see §5).
 - **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
-- **v1.2**: PDP validation requires (price + title+image) plus at least one strong product signal (add-to-cart OR product schema).
+- **v1.2**: PDP validation requires price + title+image.
 - **v1.3**: Navigation retry policy: attempts, backoff, timeouts, retryable classes, and bot-block detection with single mitigation retry (§5).
 - **v1.4**: Retryable classes include HTTP 429 (rate-limit); logging reason `status_429`.
 - **v1.5**: Artifact paths include a readable domain suffix for storage layout (§4).
 - **v1.6**: Popup handling policy: categories, detection layers, safe-click order, max two passes per page, structured popup logging, failure handling (§5).
 - **v1.7**: Pre-consent injection: vendor-level scripts + iframe application; logged as popup events (§5).
 - **v1.8**: Pre-consent vendors expanded beyond OneTrust/Shopware (best-effort vendor DOM scripts).
+- **v1.9**: Bot-block detection tightened to high-confidence indicators only (reduces false positives).
+- **v1.10**: Bot-block detection tightened to highest-confidence indicators only (reduces false positives further).
+- **v1.11**: PDP validation loosened to base signals only (price + title+image).
+- **v1.12**: HTML is always stored (no conditional gating).
+- **v1.13**: Increased minimum wait after load and added post-scroll settle delay.
+- **v1.14**: Max reliability timings (3s minimum wait, 3s scroll waits, 3s post-scroll settle).
+- **v1.17**: Progressive scroll sequence with incremental steps and bottom dwell.
+- **v1.18**: Reduced waits to 2s (min wait, scroll wait, bottom dwell, post-scroll).
+- **v1.19**: RQ job timeout set explicitly for audit jobs.
+- **v1.20**: Artifact naming convention changed to domain-first (`{domain}__{session_id}/...`). New artifact type `session_logs_jsonl` for exported session logs. All session-scoped logs stored in `crawl_logs` and exported as session log artifact; session log retention is long-term (no cleanup).
+- **v1.21**: Popup logging records only detected popup events (no selector-miss logs).
+- **v1.22**: Popup logging records only dismiss events (success/failure); detected-ignored events are not logged.
 
 ---
 
@@ -33,7 +45,7 @@ This document is the authoritative, merged specification. It includes all conten
 
 - **Worker (Playwright Crawler)**
   - Consumes jobs from Redis, executes browser crawl.
-  - Produces evidence bundle (screenshots, visible text, features JSON, optional HTML).
+  - Produces evidence bundle (screenshots, visible text, features JSON, HTML).
   - Writes artifacts to storage (S3-compatible or local).
   - Writes session results, artifacts references, and logs to Postgres.
 
@@ -42,6 +54,7 @@ This document is the authoritative, merged specification. It includes all conten
   - **Locks**: per-site or per-domain lock to prevent concurrent duplicate crawls.
   - **Rate limits**: domain-level throttling to reduce blocks and load.
   - **Job state**: short-lived job state (inflight, retry count).
+  - **Job timeout**: `AUDIT_JOB_TIMEOUT_SECONDS` (default 1200s). Jobs exceeding this are killed by RQ.
 
 - **PostgreSQL**
   - Stores session records, page-level metadata, artifact references, logs, and statuses.
@@ -64,7 +77,7 @@ This document is the authoritative, merged specification. It includes all conten
   - retention_policy (standard | short | long)
   - attempts (integer)
   - final_url (after redirects)
-  - crawl_policy_version (e.g., v1.8; PDP-not-found → partial; retry policy §5; popup policy §5)
+  - crawl_policy_version (e.g., v1.22; PDP-not-found → partial; retry policy §5; popup policy §5)
   - error_summary (nullable)
   - config_snapshot (frozen crawl policy config for this run)
   - low_confidence (boolean)
@@ -85,7 +98,7 @@ This document is the authoritative, merged specification. It includes all conten
 
 - **artifacts**
   - artifact_id
-  - artifact_type (screenshot | visible_text | features_json | html_gz)
+  - artifact_type (screenshot | visible_text | features_json | html_gz | session_logs_jsonl)
   - storage_uri
   - size_bytes
   - created_at
@@ -93,13 +106,14 @@ This document is the authoritative, merged specification. It includes all conten
   - deleted_at (nullable; soft-delete marker set by retention cleanup)
   - checksum (optional)
 
-- **logs**
+- **logs** (crawl_logs)
   - session_id
   - level (info | warn | error)
   - event_type (navigation | popup | retry | timeout | error | artifact)
   - message
   - timestamp
   - details (structured key/value)
+  - All session-scoped logs must be stored in crawl_logs and exported as a session log artifact (session_logs_jsonl).
 
 ---
 
@@ -111,10 +125,10 @@ This document is the authoritative, merged specification. It includes all conten
     - Presence of “add to cart” or price cues in link context
   - Prioritize links that appear in product grids or featured product sections.
 
-- **Validation rules (v1.2)**
+- **Validation rules (v1.11)**
   - A page is a valid PDP only if:
     - **Base signals (all required)**: price (currency + numeric or price element), product title + image (h1 or product-title class + at least one img).
-    - **Strong signal (at least one required)**: add-to-cart/buy button OR product schema.org JSON-LD.
+    - **Strong signals (tracked only)**: add-to-cart/buy button OR product schema.org JSON-LD.
 
 - **Fallbacks**
   - If no candidates:
@@ -134,17 +148,12 @@ This document is the authoritative, merged specification. It includes all conten
   - Screenshots (desktop + mobile)
   - Visible text (cleaned DOM innerText)
   - Structured features JSON
-
-- **Conditionally store html.gz**
-  - Stored only if:
-    - failed run
-    - first-time crawl of site
-    - low_confidence=true
-    - explicit debug/evidence-pack mode
+  - HTML (html.gz)
 
 - **Retention**
   - Always-stored artifacts: standard retention (long-lived)
   - HTML artifacts: short retention (default 14 days, configurable 7–30)
+  - Session log artifacts (session_logs_jsonl): long-term retention; no cleanup (never deleted by retention job).
 
 - **Retention cleanup**
   - Expired html_gz artifacts (retention_until < now) are deleted from storage and marked with deleted_at in the DB.
@@ -152,11 +161,20 @@ This document is the authoritative, merged specification. It includes all conten
   - **Dry-run**: When enabled, log candidates only; no file delete or DB update.
   - **Batch**: Configurable batch size per run (default 100).
   - **Manual CLI**: `python -m worker.cleanup` runs one cleanup pass; loads .env.
+  - Session log artifacts are excluded from retention cleanup.
 
-- **Naming convention**
-  - `{session_id}__{domain}/{page_type}/{viewport}/{artifact_type}.{ext}`
+- **Naming convention** (v1.20: domain-first)
+  - `{domain}__{session_id}/{path}`
   - `domain` is normalized: lowercase, strip leading `www.`.
-  - Example: `session123__example.com/homepage/desktop/screenshot.png`
+  - Page-level artifacts: `{domain}__{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}`
+  - Session-level artifact: `{domain}__{session_id}/session_logs.jsonl`
+  - Example: `example.com__session-uuid-123/homepage/desktop/screenshot.png`
+  - Example: `example.com__session-uuid-123/session_logs.jsonl`
+
+- **Session log export**
+  - All session-scoped logs must be written to the `crawl_logs` table during the crawl.
+  - At session end, the worker must export crawl_logs for that session to a single artifact of type `session_logs_jsonl` (e.g. one JSONL file per session, one log entry per line).
+  - Storage path follows the domain-first naming above.
 
 - **Compression**
   - HTML compressed as gzip (`html.gz`)
@@ -171,11 +189,14 @@ This document is the authoritative, merged specification. It includes all conten
   - Require: DOM stability + network idle window + minimum time after load.
   - Network idle window: no active network requests for 800ms.
   - DOM stability: no layout-shifting mutations for 1s.
+  - Minimum wait after load: 2s.
   - Hard timeout cap per page to avoid infinite waits.
 
 - **Scroll & lazy-load**
-  - Controlled scroll sequence: top → mid → bottom → top.
-  - Short wait after each scroll to allow lazy elements to load.
+  - Progressive scroll sequence: incremental steps down the page, then bottom dwell, then return to top.
+  - Wait after each step to allow lazy elements to load.
+  - Bottom dwell: 2s to allow late lazy-loads.
+  - Post-scroll settle delay: 2s before extraction and screenshots.
 
 - **Popup Handling Policy** (v1.6)
   - **Popup categories**
@@ -194,7 +215,8 @@ This document is the authoritative, merged specification. It includes all conten
     - **Pass 1**: After page load (or after navigation ready), run popup detection and safe dismiss in defined order. Wait briefly for DOM to settle after each dismiss.
     - **Pass 2**: If any dismiss occurred in pass 1, run detection once more (to catch secondary or delayed overlays). Maximum two passes per page; no further popup passes after that.
   - **Logging requirements**
-    - For every popup-related event, log: `event_type: popup`; `selector` (or selector family); `action` (e.g. dismiss_click, detected_ignored, not_found); `result` (success, failure, skipped); and page context (session_id, page_type, viewport, url or page identifier).
+    - Log only dismiss events (no selector-miss logs; no detected-ignored logs).
+    - For each dismiss event, log: `event_type: popup`; `selector` (or selector family); `action` (dismiss_click); `result` (success or failure); and page context (session_id, page_type, viewport, url or page identifier).
   - **Failure handling**
     - If a safe-click fails (element not found, not clickable, timeout): log and continue; do not fail the page. If overlays remain after both passes, log and continue with evidence capture. Page success is not conditional on popup dismissal.
   - **Pre-consent injection** (v1.7)
@@ -218,7 +240,7 @@ This document is the authoritative, merged specification. It includes all conten
     - Blocked/restricted load: response status 403, 503, 429 (rate-limit), or challenge/captcha page (see bot-block below).
   - **Non-retryable**: Do not retry on 4xx (other than 403, 429), 5xx (other than 503), or client-side crashes. Log and fail the page.
   - **Bot-block detection and single mitigation retry**:
-    - **Detection**: Treat as bot-block if, after a navigation that "succeeds" (no timeout/network error), the page exhibits: (a) challenge/captcha UI (e.g. title or body containing "challenge", "captcha", "verify you are human", "access denied"), or (b) block page with status 403/503 and body indicating bot/block.
+    - **Detection**: Treat as bot-block only for highest-confidence indicators after a successful navigation (e.g., "captcha", "verify you are human", "attention required", "cloudflare", "ddos protection"), or blocked HTTP status (403/503/429).
     - **Mitigation**: Exactly one additional attempt after bot-block detection: wait 2 s (configurable), then reload the same URL (same viewport, no UA change). No further retries for bot-block after this single mitigation.
     - **Logging**: Log `event_type: retry`, reason (e.g. `navigation_timeout`, `net_err`, `status_403_503`, `status_429`, `bot_block`), attempt number, and backoff applied.
 
@@ -302,7 +324,7 @@ migrate to explicit ORM models before worker integration if domain complexity gr
 - Works on 3 real e-commerce sites without manual intervention.
 - Produces 4 screenshots per session (home + PDP × desktop + mobile).
 - Visible text and features JSON stored for each page.
-- HTML stored only under conditional rules.
+- HTML stored for every crawl (html.gz) with short retention.
 - Runs are repeatable with the same outputs for identical inputs.
 - Logs show navigation, wait conditions, dismissals, and retries.
 - Implementation must meet senior-engineer quality: modular architecture, structured logging, typed contracts, and minimal tests for critical logic.
@@ -329,7 +351,7 @@ migrate to explicit ORM models before worker integration if domain complexity gr
   - Recommendation: network idle + DOM stability window + minimum wait.
 
 - **Low-confidence triggers**
-  - Recommendation: missing H1, missing primary CTA, PDP missing price or add-to-cart, text length below threshold, screenshot failed/blank.
+  - Recommendation: missing H1, missing primary CTA, PDP missing price or title+image, text length below threshold, screenshot failed/blank.
 
 ---
 
@@ -373,7 +395,7 @@ migrate to explicit ORM models before worker integration if domain complexity gr
 - Set low_confidence=true if any of the following are true:
   - H1 missing on the page.
   - Primary CTA not detected.
-  - PDP missing price or add-to-cart.
+  - PDP missing price or title+image.
   - Visible text length below minimum threshold.
   - Screenshot missing, failed, or blank.
 
@@ -453,12 +475,12 @@ migrate to explicit ORM models before worker integration if domain complexity gr
 
 ---
 
-## 18) PDP Validation (Tightened for v1.2)
+## 18) PDP Validation (Loosened for v1.11)
 
-- **Goal**: Reduce false positives on category/store-hub pages by requiring at least one strong product signal.
+- **Goal**: Improve recall when add-to-cart or schema signals are missing.
 - **Rule**: A page is a valid PDP only if:
   1. **Base signals (all required)**: price (currency + numeric or price element), product title + image (h1 or product-title class + at least one img).
-  2. **Strong product signal (at least one required)**: add-to-cart/buy button OR product schema.org JSON-LD.
+  2. **Strong product signal (tracked only)**: add-to-cart/buy button OR product schema.org JSON-LD.
 - **Determinism**: Unchanged; signal extraction and evaluation remain deterministic.
 
 ---

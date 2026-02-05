@@ -101,6 +101,7 @@ def test_default_category_order():
         "agree",
         "Got it",
         "Continue",
+        "Në rregull",
         "×",
         "✕",
     ],

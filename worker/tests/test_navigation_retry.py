@@ -117,20 +117,22 @@ def test_retry_reason_for_status_429_vs_403_503():
 
 @pytest.mark.asyncio
 async def test_is_bot_block_page_detects_challenge_captcha():
-    """Page with challenge/captcha/verify/access denied in title or body is bot-block."""
-    page = AsyncMock()
-    page.title = AsyncMock(return_value="Please complete the captcha")
-    page.inner_text = AsyncMock(return_value="Verify you are human")
+    """Page with strong bot-block indicators (per BOT_BLOCK_STRONG_INDICATORS) is detected."""
+    # Current indicators: captcha, verify you are human, ddos protection
+    page1 = AsyncMock()
+    page1.title = AsyncMock(return_value="Please complete the captcha")
+    page1.inner_text = AsyncMock(return_value="Verify you are human")
+    assert await is_bot_block_page(page1) is True
 
-    assert await is_bot_block_page(page) is True
+    page2 = AsyncMock()
+    page2.title = AsyncMock(return_value="Shop")
+    page2.inner_text = AsyncMock(return_value="Verify you are human to continue")
+    assert await is_bot_block_page(page2) is True
 
-    page.title = AsyncMock(return_value="Access denied")
-    page.inner_text = AsyncMock(return_value="")
-    assert await is_bot_block_page(page) is True
-
-    page.title = AsyncMock(return_value="Challenge")
-    page.inner_text = AsyncMock(return_value="Blocked by bot detection")
-    assert await is_bot_block_page(page) is True
+    page3 = AsyncMock()
+    page3.title = AsyncMock(return_value="Blocked")
+    page3.inner_text = AsyncMock(return_value="DDoS protection active")
+    assert await is_bot_block_page(page3) is True
 
 
 @pytest.mark.asyncio

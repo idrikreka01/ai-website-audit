@@ -61,6 +61,9 @@ class AppConfig:
     retention_cleanup_batch_size: int
     retention_cleanup_dry_run: bool
 
+    # RQ job timeout (seconds)
+    audit_job_timeout_seconds: int
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -113,6 +116,7 @@ class AppConfig:
             retention_cleanup_enabled=_bool_env("RETENTION_CLEANUP_ENABLED", False),
             retention_cleanup_batch_size=int(os.getenv("RETENTION_CLEANUP_BATCH_SIZE", "100")),
             retention_cleanup_dry_run=_bool_env("RETENTION_CLEANUP_DRY_RUN", False),
+            audit_job_timeout_seconds=int(os.getenv("AUDIT_JOB_TIMEOUT_SECONDS", "1200")),
         )
 
 

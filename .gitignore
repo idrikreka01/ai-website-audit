@@ -22,6 +22,7 @@ ENV/
 # Artifacts / storage
 artifacts/
 storage/
+screenshots/
 
 # Local tools
 tools/popup_debug.py

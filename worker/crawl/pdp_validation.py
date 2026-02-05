@@ -1,7 +1,7 @@
 """
-PDP validation: base (price + title+image) plus strong signal (add-to-cart or product schema).
+PDP validation: base (price + title+image). Strong signals are tracked but not required.
 
-Per TECH_SPEC_V1.1.md §3: valid PDP = (price + title+image) and (add-to-cart OR schema).
+Per TECH_SPEC_V1.1.md §3: valid PDP = price + title+image.
 """
 
 from __future__ import annotations
@@ -27,12 +27,12 @@ def evaluate_pdp_validation_signals(
     """
     Evaluate PDP validation rule (pure function for tests).
 
-    Valid PDP requires: (price + title+image) and (add-to-cart OR product schema).
+    Valid PDP requires: price + title+image. Strong signal is tracked only.
     Returns (is_valid: bool, base_met: bool, strong_signal_met: bool).
     """
     base_met = has_price and has_title_and_image
     strong_signal_met = has_add_to_cart or has_product_schema
-    is_valid = base_met and strong_signal_met
+    is_valid = base_met
     return (is_valid, base_met, strong_signal_met)
 
 
@@ -40,7 +40,7 @@ def is_valid_pdp_page(signals: dict) -> bool:
     """
     Return True if signals dict indicates a valid PDP.
 
-    Rule: (price + title+image) and (add-to-cart OR product schema).
+    Rule: price + title+image.
     Pure function for tests. signals keys: has_price, has_add_to_cart,
     has_product_schema, has_title_and_image.
     """

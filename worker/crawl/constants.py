@@ -1,7 +1,5 @@
 """
 Crawl constants: viewport configs, timeouts, PDP patterns, excluded segments.
-
-Per TECH_SPEC_V1.md; no behavior change.
 """
 
 from __future__ import annotations
@@ -13,16 +11,20 @@ Viewport = Literal["desktop", "mobile"]
 # Viewport configurations
 VIEWPORT_CONFIGS = {
     "desktop": {"width": 1920, "height": 1080},
-    "mobile": {"width": 375, "height": 667},
+    "mobile": {"width": 390, "height": 844},
 }
 
 # Timeout constants (in milliseconds)
 NETWORK_IDLE_TIMEOUT = 800  # Network idle window
 DOM_STABILITY_TIMEOUT = 1000  # DOM stability window
-MINIMUM_WAIT_AFTER_LOAD = 500  # Minimum wait after load
+MINIMUM_WAIT_AFTER_LOAD = 2000  # Minimum wait after load
 CONSENT_POSITIONING_DELAY_MS = 800  # Wait for consent banner to position before dismiss
 HARD_TIMEOUT_MS = 30000  # Hard timeout cap per page
-SCROLL_WAIT = 500  # Wait after each scroll
+SCROLL_WAIT = 2000  # Wait after each scroll
+POST_SCROLL_SETTLE_MS = 2000  # Wait after scroll sequence before capture
+SCROLL_STEP_RATIO = 0.8  # Scroll step as a ratio of viewport height
+MAX_SCROLL_STEPS = 20  # Max incremental scroll steps per page
+SCROLL_BOTTOM_WAIT_MS = 2000  # Extra wait at bottom for lazy loads
 
 # URL path patterns for PDP candidates (case-insensitive); match path segment or full path
 PDP_PATH_PATTERNS = [
@@ -226,6 +228,8 @@ COOKIE_CONSENT_SELECTORS = [
     '[id*="cookie"] a',
     '[class*="cookie"] button',
     '[class*="cookie"] a',
+    "#eu-cookie-ok",
+    ".eu-cookie-bar-notification .ok-button",
     '[id*="consent"] button',
     '[id*="consent"] a',
     '[class*="consent"] button',
@@ -296,6 +300,7 @@ POPUP_SELECTORS_MODAL = (
     '[class*="popup"] button[class*="close"]',
     '[role="dialog"] button[aria-label*="close" i]',
     '[role="dialog"] [class*="close"]',
+    'button:has-text("Close")',
 )
 
 # Age gate (dismiss/enter only; no "under age" clicks)
@@ -333,6 +338,8 @@ POPUP_CONTAINER_SELECTORS = (
     "[class*='popup']",
     "[class*='modal']",
     "[role='dialog']",
+    "[role='alertdialog']",
+    "[aria-modal='true']",
     ".offcanvas",
 )
 
@@ -361,6 +368,7 @@ SAFE_DISMISS_KEYWORDS = frozenset(
         "maybe later",
         "no thanks",
         "ok",
+        "në rregull",
         "permitir todas",
         "permitirlas todas",
         "×",  # multiplication sign, common close icon

@@ -15,6 +15,7 @@ from rq import get_current_connection
 
 from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
+from worker.artifacts import save_session_logs
 from worker.db import get_db_session
 from worker.error_summary import get_user_safe_error_summary
 from worker.locking import (
@@ -105,6 +106,17 @@ def process_audit_job(session_id: str, url: str) -> None:
             )
             raise
         finally:
+            # Export session logs at end of every job (success/partial/failure).
+            # Failure to write logs is logged but does not alter session status.
+            try:
+                save_session_logs(repository, session_uuid, domain)
+            except Exception as e:
+                logger.error(
+                    "session_log_export_failed",
+                    session_id=session_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
             if not config.disable_locks and redis_client is not None:
                 worker_id = f"worker-{os.getpid()}"
                 release_domain_lock(redis_client, domain, worker_id, session_id)
