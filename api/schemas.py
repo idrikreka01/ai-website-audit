@@ -91,3 +91,90 @@ class CreateAuditResponse(BaseModel):
     id: UUID
     status: Literal["queued"]
     url: str
+
+
+class AuditQuestionResponse(BaseModel):
+    """Response schema for audit question."""
+
+    id: UUID
+    key: str
+    stage: Literal["awareness", "consideration", "conversion"]
+    category: str
+    page_type: Literal["homepage", "collection", "product", "cart", "checkout"]
+    narrative_tier: int
+    baseline_severity: int
+    fix_intent: Optional[str] = None
+    specific_example_fix_text: Optional[str] = None
+    question_text: str
+    pass_criteria: Optional[str] = None
+    fail_criteria: Optional[str] = None
+    notes: Optional[str] = None
+    allowed_evidence_types: list[str]
+    ruleset_version: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CreateAuditQuestionRequest(BaseModel):
+    """Request schema for POST /audits/questions."""
+
+    key: str = Field(..., description="Unique stable identifier (e.g. 'aw_headline_clear_offer')")
+    stage: Literal["awareness", "consideration", "conversion"] = Field(
+        ..., description="Audit stage"
+    )
+    category: str = Field(..., description="Question category")
+    page_type: Literal["homepage", "collection", "product", "cart", "checkout"] = Field(
+        ..., description="Page type this question applies to"
+    )
+    narrative_tier: int = Field(..., ge=1, le=3, description="Narrative tier (1, 2, or 3)")
+    baseline_severity: int = Field(..., ge=1, le=5, description="Baseline severity score (1-5)")
+    question_text: str = Field(..., description="The audit question text")
+    allowed_evidence_types: list[str] = Field(
+        default_factory=list,
+        description="Allowed evidence types (e.g. ['dom', 'screenshot', 'visible_text'])",
+    )
+    ruleset_version: str = Field(default="v1", description="Ruleset version")
+    fix_intent: Optional[str] = Field(None, description="Fix intent description")
+    specific_example_fix_text: Optional[str] = Field(None, description="Example fix text")
+    pass_criteria: Optional[str] = Field(None, description="Pass criteria description")
+    fail_criteria: Optional[str] = Field(None, description="Fail criteria description")
+    notes: Optional[str] = Field(None, description="Additional notes")
+
+
+class UpdateAuditQuestionRequest(BaseModel):
+    """Request schema for PUT /audits/questions/{question_id}."""
+
+    stage: Optional[Literal["awareness", "consideration", "conversion"]] = None
+    category: Optional[str] = None
+    page_type: Optional[Literal["homepage", "collection", "product", "cart", "checkout"]] = None
+    narrative_tier: Optional[int] = Field(None, ge=1, le=3)
+    baseline_severity: Optional[int] = Field(None, ge=1, le=5)
+    question_text: Optional[str] = None
+    allowed_evidence_types: Optional[list[str]] = None
+    ruleset_version: Optional[str] = None
+    fix_intent: Optional[str] = None
+    specific_example_fix_text: Optional[str] = None
+    pass_criteria: Optional[str] = None
+    fail_criteria: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class AuditQuestionResultResponse(BaseModel):
+    """Response schema for audit question result."""
+
+    id: UUID
+    audit_id: UUID
+    question_id: UUID
+    pass_fail: bool
+    score_1_to_10: int
+    evidence_source_type: Literal["html_safe", "screenshot_only", "mixed"]
+    payload_ref: Optional[dict] = None
+    ai_reasoning_summary: Optional[str] = None
+    ai_confidence_1_to_10: Optional[int] = None
+    model_version: Optional[str] = None
+    ruleset_version: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

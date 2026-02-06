@@ -16,8 +16,12 @@ from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
     ArtifactResponse,
     AuditPageResponse,
+    AuditQuestionResponse,
+    AuditQuestionResultResponse,
     AuditSessionResponse,
+    CreateAuditQuestionRequest,
     CreateAuditResponse,
+    UpdateAuditQuestionRequest,
 )
 from shared.logging import get_logger
 
@@ -240,3 +244,143 @@ class AuditService:
         ]
 
         return artifacts
+
+    def create_question(
+        self,
+        request: CreateAuditQuestionRequest,
+    ) -> AuditQuestionResponse:
+        """
+        Create a new audit question.
+
+        Returns the created question.
+        """
+        question_data = self.repository.create_question(
+            key=request.key,
+            stage=request.stage,
+            category=request.category,
+            page_type=request.page_type,
+            narrative_tier=request.narrative_tier,
+            baseline_severity=request.baseline_severity,
+            question_text=request.question_text,
+            allowed_evidence_types=request.allowed_evidence_types,
+            ruleset_version=request.ruleset_version,
+            fix_intent=request.fix_intent,
+            specific_example_fix_text=request.specific_example_fix_text,
+            pass_criteria=request.pass_criteria,
+            fail_criteria=request.fail_criteria,
+            notes=request.notes,
+        )
+
+        logger.info(
+            "audit_question_created",
+            question_id=str(question_data["id"]),
+            key=question_data["key"],
+        )
+
+        return AuditQuestionResponse(**question_data)
+
+    def get_question(self, question_id: UUID) -> Optional[AuditQuestionResponse]:
+        """
+        Get an audit question by ID.
+
+        Returns None if not found.
+        """
+        question_data = self.repository.get_question_by_id(question_id)
+        if question_data is None:
+            return None
+        return AuditQuestionResponse(**question_data)
+
+    def list_questions(
+        self,
+        *,
+        stage: Optional[str] = None,
+        page_type: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> list[AuditQuestionResponse]:
+        """
+        List audit questions with optional filters.
+
+        Returns a list of questions.
+        """
+        questions_data = self.repository.list_questions(
+            stage=stage,
+            page_type=page_type,
+            category=category,
+        )
+        return [AuditQuestionResponse(**q) for q in questions_data]
+
+    def update_question(
+        self,
+        question_id: UUID,
+        request: UpdateAuditQuestionRequest,
+    ) -> Optional[AuditQuestionResponse]:
+        """
+        Update an audit question.
+
+        Returns the updated question, or None if not found.
+        """
+        question_data = self.repository.update_question(
+            question_id,
+            stage=request.stage,
+            category=request.category,
+            page_type=request.page_type,
+            narrative_tier=request.narrative_tier,
+            baseline_severity=request.baseline_severity,
+            question_text=request.question_text,
+            allowed_evidence_types=request.allowed_evidence_types,
+            ruleset_version=request.ruleset_version,
+            fix_intent=request.fix_intent,
+            specific_example_fix_text=request.specific_example_fix_text,
+            pass_criteria=request.pass_criteria,
+            fail_criteria=request.fail_criteria,
+            notes=request.notes,
+        )
+
+        if question_data is None:
+            return None
+
+        logger.info("audit_question_updated", question_id=str(question_id))
+
+        return AuditQuestionResponse(**question_data)
+
+    def delete_question(self, question_id: UUID) -> bool:
+        """
+        Delete an audit question by ID.
+
+        Returns True if deleted, False if not found.
+        """
+        deleted = self.repository.delete_question(question_id)
+        if deleted:
+            logger.info("audit_question_deleted", question_id=str(question_id))
+        return deleted
+
+    def get_question_results_by_audit(self, audit_id: UUID) -> list[AuditQuestionResultResponse]:
+        """
+        Get all question results for an audit session.
+
+        Returns a list of results.
+        """
+        results_data = self.repository.get_question_results_by_audit_id(audit_id)
+        return [AuditQuestionResultResponse(**r) for r in results_data]
+
+    def get_question_results_by_question(
+        self, question_id: UUID
+    ) -> list[AuditQuestionResultResponse]:
+        """
+        Get all results for a specific question across all audits.
+
+        Returns a list of results.
+        """
+        results_data = self.repository.get_question_results_by_question_id(question_id)
+        return [AuditQuestionResultResponse(**r) for r in results_data]
+
+    def get_question_result(self, result_id: UUID) -> Optional[AuditQuestionResultResponse]:
+        """
+        Get a question result by ID.
+
+        Returns None if not found.
+        """
+        result_data = self.repository.get_question_result(result_id)
+        if result_data is None:
+            return None
+        return AuditQuestionResultResponse(**result_data)

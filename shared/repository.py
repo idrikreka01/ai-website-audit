@@ -19,6 +19,8 @@ from sqlalchemy.orm import Session
 from shared.db import (
     get_artifacts_table,
     get_audit_pages_table,
+    get_audit_question_results_table,
+    get_audit_questions_table,
     get_audit_sessions_table,
     get_crawl_logs_table,
 )
@@ -33,6 +35,8 @@ class AuditRepository:
         self.pages_table = get_audit_pages_table()
         self.artifacts_table = get_artifacts_table()
         self.logs_table = get_crawl_logs_table()
+        self.questions_table = get_audit_questions_table()
+        self.question_results_table = get_audit_question_results_table()
 
     def create_session(
         self,
@@ -449,3 +453,230 @@ class AuditRepository:
         )
         self.session.execute(update_stmt)
         self.session.flush()
+
+    def create_question(
+        self,
+        *,
+        key: str,
+        stage: str,
+        category: str,
+        page_type: str,
+        narrative_tier: int,
+        baseline_severity: int,
+        question_text: str,
+        allowed_evidence_types: list[str],
+        ruleset_version: str = "v1",
+        fix_intent: Optional[str] = None,
+        specific_example_fix_text: Optional[str] = None,
+        pass_criteria: Optional[str] = None,
+        fail_criteria: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> dict:
+        """
+        Create a new audit question.
+
+        Returns the created question as a dict.
+        """
+        question_id = uuid4()
+        now = datetime.now(timezone.utc)
+
+        insert_stmt = self.questions_table.insert().values(
+            id=question_id,
+            key=key,
+            stage=stage,
+            category=category,
+            page_type=page_type,
+            narrative_tier=narrative_tier,
+            baseline_severity=baseline_severity,
+            fix_intent=fix_intent,
+            specific_example_fix_text=specific_example_fix_text,
+            question_text=question_text,
+            pass_criteria=pass_criteria,
+            fail_criteria=fail_criteria,
+            notes=notes,
+            allowed_evidence_types=allowed_evidence_types,
+            ruleset_version=ruleset_version,
+            created_at=now,
+            updated_at=now,
+        )
+
+        self.session.execute(insert_stmt)
+        self.session.flush()
+
+        select_stmt = select(self.questions_table).where(self.questions_table.c.id == question_id)
+        row = self.session.execute(select_stmt).one()
+        return dict(row._mapping)
+
+    def get_question_by_id(self, question_id: UUID) -> Optional[dict]:
+        """
+        Get an audit question by ID.
+
+        Returns the question as a dict, or None if not found.
+        """
+        stmt = select(self.questions_table).where(self.questions_table.c.id == question_id)
+        result = self.session.execute(stmt).first()
+        if result is None:
+            return None
+        return dict(result._mapping)
+
+    def get_question_by_key(self, key: str) -> Optional[dict]:
+        """
+        Get an audit question by key.
+
+        Returns the question as a dict, or None if not found.
+        """
+        stmt = select(self.questions_table).where(self.questions_table.c.key == key)
+        result = self.session.execute(stmt).first()
+        if result is None:
+            return None
+        return dict(result._mapping)
+
+    def list_questions(
+        self,
+        *,
+        stage: Optional[str] = None,
+        page_type: Optional[str] = None,
+        category: Optional[str] = None,
+    ) -> list[dict]:
+        """
+        List audit questions with optional filters.
+
+        Returns a list of question dicts.
+        """
+        stmt = select(self.questions_table)
+        conditions = []
+        if stage is not None:
+            conditions.append(self.questions_table.c.stage == stage)
+        if page_type is not None:
+            conditions.append(self.questions_table.c.page_type == page_type)
+        if category is not None:
+            conditions.append(self.questions_table.c.category == category)
+
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        stmt = stmt.order_by(self.questions_table.c.created_at.desc())
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
+    def update_question(
+        self,
+        question_id: UUID,
+        *,
+        stage: Optional[str] = None,
+        category: Optional[str] = None,
+        page_type: Optional[str] = None,
+        narrative_tier: Optional[int] = None,
+        baseline_severity: Optional[int] = None,
+        fix_intent: Optional[str] = None,
+        specific_example_fix_text: Optional[str] = None,
+        question_text: Optional[str] = None,
+        pass_criteria: Optional[str] = None,
+        fail_criteria: Optional[str] = None,
+        notes: Optional[str] = None,
+        allowed_evidence_types: Optional[list[str]] = None,
+        ruleset_version: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Update an audit question.
+
+        Updates only the provided fields. Returns the updated question as a dict,
+        or None if not found.
+        """
+        update_values = {}
+        if stage is not None:
+            update_values["stage"] = stage
+        if category is not None:
+            update_values["category"] = category
+        if page_type is not None:
+            update_values["page_type"] = page_type
+        if narrative_tier is not None:
+            update_values["narrative_tier"] = narrative_tier
+        if baseline_severity is not None:
+            update_values["baseline_severity"] = baseline_severity
+        if fix_intent is not None:
+            update_values["fix_intent"] = fix_intent
+        if specific_example_fix_text is not None:
+            update_values["specific_example_fix_text"] = specific_example_fix_text
+        if question_text is not None:
+            update_values["question_text"] = question_text
+        if pass_criteria is not None:
+            update_values["pass_criteria"] = pass_criteria
+        if fail_criteria is not None:
+            update_values["fail_criteria"] = fail_criteria
+        if notes is not None:
+            update_values["notes"] = notes
+        if allowed_evidence_types is not None:
+            update_values["allowed_evidence_types"] = allowed_evidence_types
+        if ruleset_version is not None:
+            update_values["ruleset_version"] = ruleset_version
+
+        if not update_values:
+            return self.get_question_by_id(question_id)
+
+        update_values["updated_at"] = datetime.now(timezone.utc)
+
+        update_stmt = (
+            self.questions_table.update()
+            .where(self.questions_table.c.id == question_id)
+            .values(**update_values)
+        )
+        self.session.execute(update_stmt)
+        self.session.flush()
+
+        return self.get_question_by_id(question_id)
+
+    def delete_question(self, question_id: UUID) -> bool:
+        """
+        Delete an audit question by ID.
+
+        Returns True if deleted, False if not found.
+        """
+        question = self.get_question_by_id(question_id)
+        if question is None:
+            return False
+
+        delete_stmt = self.questions_table.delete().where(self.questions_table.c.id == question_id)
+        self.session.execute(delete_stmt)
+        self.session.flush()
+        return True
+
+    def get_question_results_by_audit_id(self, audit_id: UUID) -> list[dict]:
+        """
+        Get all question results for an audit session.
+
+        Returns a list of result dicts.
+        """
+        stmt = select(self.question_results_table).where(
+            self.question_results_table.c.audit_id == audit_id
+        )
+        stmt = stmt.order_by(self.question_results_table.c.created_at.desc())
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
+    def get_question_results_by_question_id(self, question_id: UUID) -> list[dict]:
+        """
+        Get all results for a specific question across all audits.
+
+        Returns a list of result dicts.
+        """
+        stmt = select(self.question_results_table).where(
+            self.question_results_table.c.question_id == question_id
+        )
+        stmt = stmt.order_by(self.question_results_table.c.created_at.desc())
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
+    def get_question_result(self, result_id: UUID) -> Optional[dict]:
+        """
+        Get a question result by ID.
+
+        Returns the result as a dict, or None if not found.
+        """
+        stmt = select(self.question_results_table).where(
+            self.question_results_table.c.id == result_id
+        )
+        result = self.session.execute(stmt).first()
+        if result is None:
+            return None
+        return dict(result._mapping)
