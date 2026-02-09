@@ -64,6 +64,14 @@ class AppConfig:
     # RQ job timeout (seconds)
     audit_job_timeout_seconds: int
 
+    # OpenAI API configuration (for HTML analysis)
+    openai_api_key: Optional[str]
+    html_analysis_mode: str
+    
+    # Telegram notification configuration
+    telegram_bot_token: Optional[str]
+    telegram_chat_id: Optional[str]
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -117,6 +125,10 @@ class AppConfig:
             retention_cleanup_batch_size=int(os.getenv("RETENTION_CLEANUP_BATCH_SIZE", "100")),
             retention_cleanup_dry_run=_bool_env("RETENTION_CLEANUP_DRY_RUN", False),
             audit_job_timeout_seconds=int(os.getenv("AUDIT_JOB_TIMEOUT_SECONDS", "1200")),
+            openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+            html_analysis_mode=os.getenv("HTML_ANALYSIS_MODE", "automatic").lower(),
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
         )
 
 
