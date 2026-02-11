@@ -88,6 +88,35 @@ def process_audit_job(session_id: str, url: str) -> None:
                 )
                 raise
 
+        if config.telegram_bot_token and config.telegram_chat_id:
+            try:
+                from shared.telegram import send_telegram_message
+
+                session_short_id = str(session_uuid)[:8]
+                message = f"""🚀 <b>Audit Started</b>
+
+🌐 <b>URL:</b> {url}
+🆔 <b>Session:</b> {session_short_id}...
+🏢 <b>Domain:</b> {domain}
+
+⏳ Starting homepage crawl..."""
+                send_telegram_message(
+                    bot_token=config.telegram_bot_token,
+                    chat_id=config.telegram_chat_id,
+                    message=message,
+                    parse_mode="HTML",
+                )
+                logger.info(
+                    "telegram_audit_started_notification_sent", session_id=session_id, url=url
+                )
+            except Exception as e:
+                logger.warning(
+                    "telegram_audit_started_notification_failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    session_id=session_id,
+                )
+
         try:
             run_audit_session(url, session_uuid, repository)
         except Exception as e:

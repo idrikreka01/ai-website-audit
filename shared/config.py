@@ -64,6 +64,14 @@ class AppConfig:
     # RQ job timeout (seconds)
     audit_job_timeout_seconds: int
 
+    # OpenAI API configuration (for HTML analysis)
+    openai_api_key: Optional[str]
+    html_analysis_mode: str
+
+    # Telegram notification configuration
+    telegram_bot_token: Optional[str]
+    telegram_chat_id: Optional[str]
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -96,6 +104,10 @@ class AppConfig:
                 return 14
             return max(7, min(30, days))
 
+        # In local/dev, default to disabling locks & throttle unless explicitly overridden.
+        locks_disabled_by_default = environment in {"local", "dev"}
+        throttle_disabled_by_default = environment in {"local", "dev"}
+
         return cls(
             environment=environment,  # type: ignore[arg-type]
             log_level=os.getenv("LOG_LEVEL", "INFO"),
@@ -110,13 +122,17 @@ class AppConfig:
             domain_lock_backoff_base_ms=int(os.getenv("DOMAIN_LOCK_BACKOFF_BASE_MS", "1000")),
             domain_min_delay_ms=int(os.getenv("DOMAIN_MIN_DELAY_MS", "2000")),
             domain_throttle_ttl_seconds=int(os.getenv("DOMAIN_THROTTLE_TTL_SECONDS", "60")),
-            disable_throttle=_bool_env("DISABLE_THROTTLE", False),
-            disable_locks=_bool_env("DISABLE_LOCKS", False),
+            disable_throttle=_bool_env("DISABLE_THROTTLE", throttle_disabled_by_default),
+            disable_locks=_bool_env("DISABLE_LOCKS", locks_disabled_by_default),
             html_retention_days=_html_retention_days(),
             retention_cleanup_enabled=_bool_env("RETENTION_CLEANUP_ENABLED", False),
             retention_cleanup_batch_size=int(os.getenv("RETENTION_CLEANUP_BATCH_SIZE", "100")),
             retention_cleanup_dry_run=_bool_env("RETENTION_CLEANUP_DRY_RUN", False),
             audit_job_timeout_seconds=int(os.getenv("AUDIT_JOB_TIMEOUT_SECONDS", "1200")),
+            openai_api_key=os.getenv("OPENAI_API_KEY") or None,
+            html_analysis_mode=os.getenv("HTML_ANALYSIS_MODE", "automatic").lower(),
+            telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
+            telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
         )
 
 
