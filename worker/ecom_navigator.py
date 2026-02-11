@@ -18,6 +18,7 @@ from uuid import UUID
 
 from playwright.async_api import Browser, Page, async_playwright
 
+from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
 from worker.artifacts import (
     save_features_json,
@@ -26,7 +27,6 @@ from worker.artifacts import (
     save_visible_text,
 )
 from worker.checkout_flow import run_checkout_flow
-from worker.html_analysis import analyze_product_html
 from worker.crawl import (
     CONSENT_POSITIONING_DELAY_MS,
     DEFAULT_VENDORS,
@@ -43,20 +43,11 @@ from worker.crawl import (
 from worker.crawl.navigation_retry import navigate_with_retry
 from worker.crawl.pdp_candidates import (
     extract_pdp_candidate_links,
-    filter_pdp_candidate_urls,
-    get_etld_plus_one,
     normalize_internal_url,
 )
 from worker.crawl.pdp_validation import PRICE_PATTERN, extract_pdp_validation_signals
+from worker.html_analysis import analyze_product_html
 from worker.repository import AuditRepository
-from worker.storage import (
-    build_artifact_path,
-    ensure_artifact_dir,
-    write_html_gz as storage_write_html_gz,
-    write_json as storage_write_json,
-    write_screenshot as storage_write_screenshot,
-    write_text as storage_write_text,
-)
 
 logger = get_logger(__name__)
 
@@ -155,7 +146,7 @@ class UniversalEcomNavigator:
                 return
 
             await apply_preconsent_in_frames(page, DEFAULT_VENDORS)
-            load_timings = await wait_for_page_ready(page, soft_timeout=10000)
+            await wait_for_page_ready(page, soft_timeout=10000)
             await asyncio.sleep(CONSENT_POSITIONING_DELAY_MS / 1000)
             await dismiss_popups(page)
             await scroll_sequence(page)
@@ -182,7 +173,7 @@ class UniversalEcomNavigator:
                 return
 
             await apply_preconsent_in_frames(page, DEFAULT_VENDORS)
-            load_timings = await wait_for_page_ready(page, soft_timeout=10000)
+            await wait_for_page_ready(page, soft_timeout=10000)
             await asyncio.sleep(CONSENT_POSITIONING_DELAY_MS / 1000)
             await dismiss_popups(page)
             await scroll_sequence(page)
@@ -281,14 +272,22 @@ class UniversalEcomNavigator:
         """Quick validation: check if URL looks like a product page (not listing/category)."""
         parsed = urlparse(url)
         path = (parsed.path or "/").lower()
-        
-        listing_indicators = ["/pl", "/list", "/category", "/categories", "/search", "/browse", "/shop"]
+
+        listing_indicators = [
+            "/pl",
+            "/list",
+            "/category",
+            "/categories",
+            "/search",
+            "/browse",
+            "/shop",
+        ]
         if any(indicator in path for indicator in listing_indicators):
             return False
-        
+
         if path.count("/") > 4:
             return False
-        
+
         return True
 
     async def _click_shop_entry_points(self, page: Page) -> Optional[str]:
@@ -409,7 +408,10 @@ class UniversalEcomNavigator:
         return has_h1 and has_price and has_add_to_cart
 
     async def _handle_variants(self, page: Page) -> None:
-        """Handle product variants: selects, radios, swatches. Only interact with visible elements."""
+        """Handle product variants: selects, radios, swatches.
+
+        Only interact with visible elements.
+        """
         try:
             selects = await page.locator("select").all()
             for select in selects:
@@ -462,7 +464,8 @@ class UniversalEcomNavigator:
                         continue
 
             subscription_toggles = await page.locator(
-                'input[type="checkbox"][name*="subscription" i], input[type="radio"][value*="one-time" i]'
+                'input[type="checkbox"][name*="subscription" i], '
+                'input[type="radio"][value*="one-time" i]'
             ).all()
             for toggle in subscription_toggles:
                 try:
@@ -476,7 +479,9 @@ class UniversalEcomNavigator:
                 except Exception:
                     continue
 
-            quantity_inputs = await page.locator('input[name*="quantity" i], input[type="number"]').all()
+            quantity_inputs = await page.locator(
+                'input[name*="quantity" i], input[type="number"]'
+            ).all()
             for qty_input in quantity_inputs[:1]:
                 try:
                     if await qty_input.is_visible():
@@ -594,7 +599,9 @@ class UniversalEcomNavigator:
                     await button.click()
                     await asyncio.sleep(2)
 
-                    if await self._confirm_add_to_cart_success(page, initial_url, cart_badge_before):
+                    if await self._confirm_add_to_cart_success(
+                        page, initial_url, cart_badge_before
+                    ):
                         logger.info("add_to_cart_success", selector=selector)
                         self.repository.create_log(
                             session_id=self.session_id,
@@ -671,7 +678,7 @@ class UniversalEcomNavigator:
         badge_selectors = [
             '[class*="cart-count"]',
             '[class*="cart-badge"]',
-            '[data-cart-count]',
+            "[data-cart-count]",
             '[aria-label*="cart" i]',
         ]
         for selector in badge_selectors:
@@ -759,9 +766,12 @@ class UniversalEcomNavigator:
                 re.I,
             )
         )
-        has_checkout_cta = await page.locator(
-            'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
-        ).first.count() > 0
+        has_checkout_cta = (
+            await page.locator(
+                'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
+            ).first.count()
+            > 0
+        )
 
         return has_line_items or has_checkout_cta
 
@@ -919,12 +929,19 @@ class UniversalEcomNavigator:
                 re.I,
             )
         )
-        has_payment_section = await page.locator(
-            '[class*="payment"], [class*="checkout"], input[type="email"], input[name*="address"]'
-        ).first.count() > 0
-        has_step_indicator = await page.locator(
-            '[class*="step"], [class*="progress"], [aria-label*="step" i]'
-        ).first.count() > 0
+        has_payment_section = (
+            await page.locator(
+                '[class*="payment"], [class*="checkout"], '
+                'input[type="email"], input[name*="address"]'
+            ).first.count()
+            > 0
+        )
+        has_step_indicator = (
+            await page.locator(
+                '[class*="step"], [class*="progress"], [aria-label*="step" i]'
+            ).first.count()
+            > 0
+        )
 
         return has_form_fields or has_payment_section or has_step_indicator
 
@@ -1034,9 +1051,7 @@ class UniversalEcomNavigator:
                 normalized_domain = normalized_domain[4:]
             normalized_domain = normalized_domain or "unknown-domain"
             root_name = f"{normalized_domain}__{self.session_id}"
-            json_path = (
-                artifacts_root / root_name / "pdp" / "html_analysis.json"
-            )
+            json_path = artifacts_root / root_name / "pdp" / "html_analysis.json"
 
             if json_path.exists():
                 with open(json_path, "r", encoding="utf-8") as f:
@@ -1051,7 +1066,6 @@ class UniversalEcomNavigator:
         """Run checkout flow using HTML analysis JSON."""
         try:
             import sys
-            from shared.config import get_config
 
             config = get_config()
             if config.html_analysis_mode.lower() == "manual":
@@ -1059,11 +1073,11 @@ class UniversalEcomNavigator:
                 if json_file_path:
                     json_path = Path(json_file_path)
                     flag_file = json_path.parent / "checkout_ready.flag"
-                    
+
                     print("\n" + "=" * 80)
                     print("CHECKOUT FLOW - MANUAL MODE")
                     print("=" * 80)
-                    print(f"\nHTML analysis JSON file:")
+                    print("\nHTML analysis JSON file:")
                     print(f"  {json_file_path}")
                     print("\nTo proceed with checkout flow, create this flag file:")
                     print(f"  {flag_file.absolute()}")
@@ -1072,6 +1086,7 @@ class UniversalEcomNavigator:
                     sys.stdout.flush()
 
                     import time
+
                     max_wait_seconds = 3600
                     wait_interval = 2
                     waited = 0
@@ -1079,7 +1094,11 @@ class UniversalEcomNavigator:
                     while not flag_file.exists():
                         if waited >= max_wait_seconds:
                             logger.warning("checkout_flow_manual_timeout")
-                            print(f"\nWARNING: Timeout after {max_wait_seconds} seconds, proceeding anyway...")
+                            timeout_msg = (
+                                f"\nWARNING: Timeout after {max_wait_seconds} seconds, "
+                                "proceeding anyway..."
+                            )
+                            print(timeout_msg)
                             break
                         time.sleep(wait_interval)
                         waited += wait_interval
@@ -1088,7 +1107,7 @@ class UniversalEcomNavigator:
                             sys.stdout.flush()
 
                     if flag_file.exists():
-                        print(f"\n✓ Flag file found! Proceeding with checkout flow...")
+                        print("\n✓ Flag file found! Proceeding with checkout flow...")
                         sys.stdout.flush()
                         flag_file.unlink()
 

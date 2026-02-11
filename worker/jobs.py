@@ -91,6 +91,7 @@ def process_audit_job(session_id: str, url: str) -> None:
         if config.telegram_bot_token and config.telegram_chat_id:
             try:
                 from shared.telegram import send_telegram_message
+
                 session_short_id = str(session_uuid)[:8]
                 message = f"""🚀 <b>Audit Started</b>
 
@@ -105,7 +106,9 @@ def process_audit_job(session_id: str, url: str) -> None:
                     message=message,
                     parse_mode="HTML",
                 )
-                logger.info("telegram_audit_started_notification_sent", session_id=session_id, url=url)
+                logger.info(
+                    "telegram_audit_started_notification_sent", session_id=session_id, url=url
+                )
             except Exception as e:
                 logger.warning(
                     "telegram_audit_started_notification_failed",

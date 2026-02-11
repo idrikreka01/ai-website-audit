@@ -62,10 +62,12 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
     logger.info("audit_session_status_updated", status="running")
 
     from shared.config import get_config
+
     config = get_config()
     if config.telegram_bot_token and config.telegram_chat_id:
         try:
             from shared.telegram import send_telegram_message
+
             message = f"""🚀 <b>Audit Started</b>
 
 🌐 <b>URL:</b> {url}
@@ -81,7 +83,11 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             )
             logger.info("telegram_audit_started_notification_sent", session_id=session_id_str)
         except Exception as e:
-            logger.warning("telegram_audit_started_notification_failed", error=str(e), session_id=session_id_str)
+            logger.warning(
+                "telegram_audit_started_notification_failed",
+                error=str(e),
+                session_id=session_id_str,
+            )
 
     repository.create_log(
         session_id=session_uuid,

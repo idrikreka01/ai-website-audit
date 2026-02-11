@@ -8,14 +8,12 @@ and captures artifacts (screenshots, HTML, visible_text) for each step.
 from __future__ import annotations
 
 import asyncio
-import json
-import sys
-from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
-from playwright.async_api import Page, TimeoutError as PWTimeout
+from playwright.async_api import Page
+from playwright.async_api import TimeoutError as PWTimeout
 
 from shared.config import get_config
 from shared.logging import get_logger
@@ -108,9 +106,36 @@ async def run_checkout_flow(
                 await dismiss_popups(page)
 
         add_to_cart_config = html_analysis_json.get("add_to_cart", {})
-        has_add_to_cart = add_to_cart_config.get("found", False) or bool(add_to_cart_config.get("selector"))
+        has_add_to_cart = add_to_cart_config.get("found", False) or bool(
+            add_to_cart_config.get("selector")
+        )
         if has_add_to_cart:
-            added = await _add_to_cart(page, add_to_cart_config, repository, session_id)
+            await asyncio.sleep(2)
+
+            max_add_attempts = 3
+            added = False
+
+            for attempt in range(1, max_add_attempts + 1):
+                added = await _add_to_cart(
+                    page, add_to_cart_config, repository, session_id, viewport, domain
+                )
+                if added:
+                    break
+
+                logger.warning(
+                    "add_to_cart_retry",
+                    attempt=attempt,
+                    max_attempts=max_add_attempts,
+                    session_id=str(session_id),
+                    viewport=viewport,
+                    domain=domain,
+                )
+
+                await asyncio.sleep(2)
+                await dismiss_popups(page)
+                await scroll_sequence(page)
+                await dismiss_popups(page)
+
             result["add_to_cart"]["status"] = "completed" if added else "failed"
 
             if added:
@@ -179,21 +204,65 @@ async def _select_variants(
         logger.info("selecting_variant_group", group=group_name, control_type=control_type)
 
         selected = False
+        attempted_count = 0
+        skipped_count = 0
+
         for option in options:
-            if option.get("disabled_hint") is not None:
+            disabled_hint = option.get("disabled_hint")
+            if disabled_hint is not None:
+                skipped_count += 1
+                logger.debug(
+                    "variant_option_skipped_disabled_trying_next",
+                    group=group_name,
+                    label=option.get("label", "Unknown"),
+                    disabled_hint=disabled_hint,
+                    skipped_count=skipped_count,
+                    session_id=str(session_id),
+                )
                 continue
+
+            attempted_count += 1
+            logger.debug(
+                "variant_option_attempting",
+                group=group_name,
+                label=option.get("label", "Unknown"),
+                attempt=attempted_count,
+                total_options=len(options),
+                session_id=str(session_id),
+            )
 
             if await _select_variant_option(page, option, group_name, control_type):
                 selected = True
+                logger.info(
+                    "variant_option_selected_success",
+                    group=group_name,
+                    label=option.get("label", "Unknown"),
+                    skipped_before=skipped_count,
+                    attempts=attempted_count,
+                    session_id=str(session_id),
+                )
                 repository.create_log(
                     session_id=session_id,
                     level="info",
                     event_type="navigation",
                     message="Variant selected",
-                    details={"group": group_name, "option": option.get("label", "Unknown")},
+                    details={
+                        "group": group_name,
+                        "option": option.get("label", "Unknown"),
+                        "skipped_count": skipped_count,
+                        "attempts": attempted_count,
+                    },
                 )
                 await asyncio.sleep(1)
                 break
+            else:
+                logger.debug(
+                    "variant_option_failed_trying_next",
+                    group=group_name,
+                    label=option.get("label", "Unknown"),
+                    attempt=attempted_count,
+                    session_id=str(session_id),
+                )
 
         if required and not selected:
             logger.error("required_variant_not_selected", group=group_name)
@@ -219,12 +288,13 @@ async def _select_variant_option(
 
         if selector_type == "xpath":
             import re
+
             test_id_match = None
             if "data-testid='" in selector or 'data-testid="' in selector:
                 testid_matches = re.findall(r"data-testid=['\"]([^'\"]+)['\"]", selector)
                 if testid_matches:
                     test_id_match = testid_matches[-1]
-            
+
             if test_id_match:
                 try:
                     locator = page.get_by_test_id(test_id_match)
@@ -234,25 +304,31 @@ async def _select_variant_option(
                             try:
                                 if await locator.is_visible(timeout=3000):
                                     await locator.click(timeout=5000)
-                                    logger.info("variant_option_selected", group=group_name, label=label)
+                                    logger.info(
+                                        "variant_option_selected", group=group_name, label=label
+                                    )
                                     return True
                             except Exception:
                                 pass
-                            
+
                             try:
                                 await locator.click(timeout=5000, force=True)
-                                logger.info("variant_option_selected", group=group_name, label=label)
+                                logger.info(
+                                    "variant_option_selected", group=group_name, label=label
+                                )
                                 return True
                             except Exception:
                                 try:
                                     await locator.evaluate("el => el.click()")
-                                    logger.info("variant_option_selected", group=group_name, label=label)
+                                    logger.info(
+                                        "variant_option_selected", group=group_name, label=label
+                                    )
                                     return True
                                 except Exception:
                                     pass
                 except Exception:
                     pass
-            
+
             locator = page.locator(f"xpath={selector}")
         else:
             if selector.startswith("[data-testid=") or selector.startswith("*[data-testid="):
@@ -278,10 +354,10 @@ async def _select_variant_option(
                             visible_locators.append(single_locator)
                 except Exception:
                     continue
-            
+
             if not visible_locators:
                 return False
-            
+
             locator = visible_locators[0]
         else:
             is_visible = False
@@ -289,7 +365,7 @@ async def _select_variant_option(
                 is_visible = await locator.is_visible(timeout=3000)
             except Exception:
                 pass
-            
+
             if not is_visible:
                 try:
                     await locator.scroll_into_view_if_needed(timeout=2000)
@@ -298,10 +374,32 @@ async def _select_variant_option(
                     pass
 
         if await _is_disabled(locator):
+            logger.debug(
+                "variant_option_skipped_disabled_check",
+                group=group_name,
+                label=label,
+                selector=selector,
+            )
             return False
 
         text = await locator.inner_text() if await locator.count() > 0 else ""
-        if "sold out" in text.lower() or "out of stock" in text.lower():
+        text_lower = text.lower()
+        if any(
+            phrase in text_lower
+            for phrase in [
+                "sold out",
+                "out of stock",
+                "unavailable",
+                "not available",
+                "temporarily unavailable",
+            ]
+        ):
+            logger.debug(
+                "variant_option_skipped_text_indicator",
+                group=group_name,
+                label=label,
+                text_snippet=text[:50],
+            )
             return False
 
         is_visible_final = False
@@ -309,14 +407,14 @@ async def _select_variant_option(
             is_visible_final = await locator.is_visible(timeout=2000)
         except Exception:
             pass
-        
+
         if not is_visible_final:
             try:
                 await locator.scroll_into_view_if_needed(timeout=2000)
                 await asyncio.sleep(0.5)
             except Exception:
                 pass
-        
+
         try:
             if is_visible_final or await locator.is_visible(timeout=1000):
                 await locator.click(timeout=5000)
@@ -324,7 +422,7 @@ async def _select_variant_option(
                 return True
         except Exception:
             pass
-        
+
         try:
             await locator.click(timeout=5000, force=True)
             logger.info("variant_option_selected", group=group_name, label=label)
@@ -345,7 +443,7 @@ async def _select_variant_option(
                     all_locators = await page.locator(f"xpath={selector}").all()
                 else:
                     all_locators = await page.locator(selector).all()
-                
+
                 for loc in all_locators[:5]:
                     try:
                         await loc.scroll_into_view_if_needed(timeout=2000)
@@ -362,14 +460,18 @@ async def _select_variant_option(
                         except Exception:
                             try:
                                 await loc.evaluate("el => el.click()")
-                                logger.info("variant_option_selected", group=group_name, label=label)
+                                logger.info(
+                                    "variant_option_selected", group=group_name, label=label
+                                )
                                 return True
                             except Exception:
                                 continue
             except Exception:
                 pass
-        
-        logger.warning("variant_selection_failed", group=group_name, label=label, error=str(e)[:200])
+
+        logger.warning(
+            "variant_selection_failed", group=group_name, label=label, error=str(e)[:200]
+        )
         return False
 
 
@@ -446,7 +548,7 @@ def _extract_value_from_xpath(xpath_part: str) -> Optional[str]:
 
 
 async def _is_disabled(locator) -> bool:
-    """Check if locator is disabled."""
+    """Check if locator is disabled - universal detection including strikethrough."""
     try:
         disabled = await locator.get_attribute("disabled")
         if disabled is not None:
@@ -455,15 +557,83 @@ async def _is_disabled(locator) -> bool:
         if aria_disabled == "true":
             return True
         classes = await locator.get_attribute("class") or ""
-        if "disabled" in classes.lower() or "sold-out" in classes.lower():
+        class_lower = classes.lower()
+
+        disabled_keywords = [
+            "disabled",
+            "sold-out",
+            "out-of-stock",
+            "unavailable",
+            "not-available",
+            "oos",
+            "outofstock",
+            "stock-0",
+            "inventory-0",
+        ]
+
+        non_disabled_keywords = ["will-restock", "back-in-stock", "restock"]
+
+        has_disabled_keyword = any(keyword in class_lower for keyword in disabled_keywords)
+        has_only_restock_keyword = (
+            any(keyword in class_lower for keyword in non_disabled_keywords)
+            and not has_disabled_keyword
+        )
+
+        if has_disabled_keyword:
             return True
+
+        if has_only_restock_keyword:
+            return False
+
+        text = await locator.inner_text() if await locator.count() > 0 else ""
+        text_lower = text.lower()
+        if any(
+            phrase in text_lower
+            for phrase in [
+                "sold out",
+                "out of stock",
+                "unavailable",
+                "not available",
+                "temporarily unavailable",
+            ]
+        ):
+            return True
+
+        has_strikethrough = await locator.evaluate("""
+            (el) => {
+                const style = window.getComputedStyle(el);
+                if (style.textDecoration.includes('line-through')) return true;
+                
+                const parent = el.parentElement;
+                if (parent) {
+                    const parentStyle = window.getComputedStyle(parent);
+                    if (parentStyle.textDecoration.includes('line-through')) return true;
+                }
+                
+                if (el.closest('s, strike, del')) return true;
+                
+                const textContent = el.textContent || '';
+                const hasStrikeTag = el.querySelector('s, strike, del');
+                if (hasStrikeTag) return true;
+                
+                return false;
+            }
+        """)
+        if has_strikethrough:
+            return True
+
         return False
     except Exception:
         return False
 
 
 async def _add_to_cart(
-    page: Page, add_to_cart_config: dict, repository: AuditRepository, session_id: UUID
+    page: Page,
+    add_to_cart_config: dict,
+    repository: AuditRepository,
+    session_id: UUID,
+    viewport: str = "desktop",
+    domain: str = "",
 ) -> bool:
     """Click add-to-cart button with improved visibility handling and error detection."""
     selector_type = add_to_cart_config.get("selector_type", "css")
@@ -476,22 +646,39 @@ async def _add_to_cart(
     try:
         if selector_type == "xpath":
             test_id_match = None
-            if selector.startswith("//*[@data-testid='") or selector.startswith("//*[@data-testid=\""):
-                if "data-testid='" in selector:
-                    test_id_match = selector.split("data-testid='")[1].split("'")[0]
-                elif 'data-testid="' in selector:
-                    test_id_match = selector.split('data-testid="')[1].split('"')[0]
-                
-                if test_id_match:
-                    try:
-                        locator = page.get_by_test_id(test_id_match)
-                        if await locator.count() > 0:
-                            pass
-                        else:
-                            locator = page.locator(f"xpath={selector}")
-                    except Exception:
+            import re
+
+            testid_pattern = r"@data-testid=['\"]([^'\"]+)['\"]"
+            match = re.search(testid_pattern, selector)
+            if match:
+                test_id_match = match.group(1)
+
+            if test_id_match:
+                try:
+                    locator = page.get_by_test_id(test_id_match)
+                    if await locator.count() > 0:
+                        logger.debug(
+                            "add_to_cart_using_test_id",
+                            test_id=test_id_match,
+                            session_id=str(session_id),
+                            viewport=viewport,
+                            domain=domain,
+                        )
+                    else:
                         locator = page.locator(f"xpath={selector}")
-                else:
+                        logger.debug(
+                            "add_to_cart_test_id_not_found_fallback_xpath",
+                            test_id=test_id_match,
+                            selector=selector,
+                            session_id=str(session_id),
+                        )
+                except Exception as e:
+                    logger.debug(
+                        "add_to_cart_test_id_error_fallback_xpath",
+                        test_id=test_id_match,
+                        error=str(e),
+                        session_id=str(session_id),
+                    )
                     locator = page.locator(f"xpath={selector}")
             else:
                 locator = page.locator(f"xpath={selector}")
@@ -518,7 +705,7 @@ async def _add_to_cart(
                         visible_locators.append(single_locator)
                 except Exception:
                     continue
-            
+
             if not visible_locators:
                 await asyncio.sleep(2)
                 for i in range(min(count, 5)):
@@ -531,10 +718,18 @@ async def _add_to_cart(
                             break
                     except Exception:
                         continue
-            
+
             if not visible_locators:
+                logger.warning(
+                    "add_to_cart_no_visible_elements_after_scroll",
+                    selector=selector,
+                    count=count,
+                    session_id=str(session_id),
+                    viewport=viewport,
+                    domain=domain,
+                )
                 return False
-            
+
             locator = visible_locators[0]
         else:
             is_visible = False
@@ -542,7 +737,7 @@ async def _add_to_cart(
                 is_visible = await locator.is_visible(timeout=3000)
             except Exception:
                 pass
-            
+
             if not is_visible:
                 try:
                     await locator.scroll_into_view_if_needed(timeout=5000)
@@ -550,10 +745,17 @@ async def _add_to_cart(
                     is_visible = await locator.is_visible(timeout=2000)
                 except Exception:
                     pass
-                
+
                 if not is_visible:
                     exists = await locator.count() > 0
                     if not exists:
+                        logger.warning(
+                            "add_to_cart_element_not_visible_after_scroll",
+                            selector=selector,
+                            session_id=str(session_id),
+                            viewport=viewport,
+                            domain=domain,
+                        )
                         return False
 
         if click_strategy == "scroll_into_view_then_click":
@@ -579,6 +781,13 @@ async def _add_to_cart(
                     pass
             else:
                 if await _is_disabled(locator):
+                    logger.warning(
+                        "add_to_cart_button_disabled",
+                        selector=selector,
+                        session_id=str(session_id),
+                        viewport=viewport,
+                        domain=domain,
+                    )
                     return False
 
         if not await locator.is_visible(timeout=3000):
@@ -600,16 +809,33 @@ async def _add_to_cart(
                 await locator.click(timeout=5000)
                 clicked = True
         except Exception as e:
-            logger.warning(f"Primary click method failed: {str(e)[:100]}, trying alternatives")
+            logger.warning(
+                "add_to_cart_primary_click_failed_trying_alternatives",
+                selector=selector,
+                click_strategy=click_strategy,
+                error=str(e),
+                error_type=type(e).__name__,
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
             try:
                 await locator.evaluate("el => el.click()")
                 clicked = True
-            except Exception as e1:
+            except Exception:
                 try:
                     await locator.click(force=True, timeout=5000)
                     clicked = True
                 except Exception as e2:
-                    logger.error(f"All click methods failed: {str(e2)[:100]}")
+                    logger.error(
+                        "add_to_cart_all_click_methods_failed",
+                        selector=selector,
+                        error=str(e2),
+                        error_type=type(e2).__name__,
+                        session_id=str(session_id),
+                        viewport=viewport,
+                        domain=domain,
+                    )
                     return False
 
         if clicked:
@@ -629,32 +855,82 @@ async def _add_to_cart(
                 ".alert-error",
                 ".notification--error",
             ]
-            
+
             for error_sel in error_selectors:
                 try:
                     error_elem = page.locator(error_sel).first
                     if await error_elem.is_visible(timeout=2000):
                         error_text = await error_elem.inner_text()
-                        if error_text and any(phrase in error_text.lower() for phrase in [
-                            "sorry, there was an issue",
-                            "issue adding this item",
-                            "please try again",
-                            "unable to add",
-                            "failed to add",
-                        ]):
+                        if error_text and any(
+                            phrase in error_text.lower()
+                            for phrase in [
+                                "sorry, there was an issue",
+                                "issue adding this item",
+                                "please try again",
+                                "unable to add",
+                                "failed to add",
+                            ]
+                        ):
                             logger.error(f"Add-to-cart error detected: {error_text[:200]}")
                             return False
                 except Exception:
                     continue
 
-            logger.info("add_to_cart_clicked", session_id=str(session_id))
+            logger.info(
+                "add_to_cart_clicked",
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+                click_strategy=click_strategy,
+                selector_type=selector_type,
+            )
             repository.create_log(
                 session_id=session_id,
                 level="info",
                 event_type="navigation",
                 message="Add to cart clicked",
-                details={"strategy": click_strategy},
+                details={
+                    "strategy": click_strategy,
+                    "viewport": viewport,
+                    "domain": domain,
+                    "selector_type": selector_type,
+                },
             )
+            config = get_config()
+            if config.telegram_bot_token and config.telegram_chat_id:
+                try:
+                    from shared.telegram import send_telegram_message
+
+                    msg = (
+                        "🛒 Checkout: Add to cart clicked\n"
+                        f"domain: {domain}\n"
+                        f"viewport: {viewport}\n"
+                        f"session_id: {session_id}\n"
+                        f"strategy: {click_strategy}"
+                    )
+                    if send_telegram_message(
+                        bot_token=config.telegram_bot_token,
+                        chat_id=config.telegram_chat_id,
+                        message=msg,
+                    ):
+                        logger.info(
+                            "telegram_checkout_add_to_cart_sent",
+                            session_id=str(session_id),
+                            viewport=viewport,
+                            domain=domain,
+                        )
+                    else:
+                        logger.warning(
+                            "telegram_checkout_add_to_cart_failed",
+                            session_id=str(session_id),
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "telegram_checkout_add_to_cart_failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        session_id=str(session_id),
+                    )
             return True
 
     except Exception as e:
@@ -733,11 +1009,19 @@ async def _navigate_to_checkout(
 ) -> bool:
     """Navigate to checkout page."""
     checkout_selectors = [
+        'button:has-text("checkout securely" i)',
         'button:has-text("checkout securely")',
+        'button:has-text("CHECKOUT SECURELY")',
+        'button:has-text("proceed to checkout" i)',
         'button:has-text("proceed to checkout")',
+        'button:has-text("secure checkout" i)',
         'button:has-text("secure checkout")',
+        'button:has-text("checkout" i)',
+        'a:has-text("checkout securely" i)',
+        'a:has-text("checkout" i)',
         'a[href*="/checkout"]',
         '[data-testid*="checkout"]',
+        '[aria-label*="checkout" i]',
     ]
 
     for selector in checkout_selectors:
@@ -753,14 +1037,38 @@ async def _navigate_to_checkout(
                     if parsed_href.netloc and parsed_href.netloc != urlparse(base_url).netloc:
                         continue
 
+                button_text = await elem.inner_text() if await elem.count() > 0 else ""
+                logger.debug(
+                    "checkout_button_found",
+                    selector=selector,
+                    text=button_text[:50],
+                    session_id=str(session_id),
+                    viewport=viewport,
+                    domain=domain,
+                )
+
                 await elem.click(timeout=5000)
                 await asyncio.sleep(2)
                 await wait_for_page_ready(page, soft_timeout=5000)
 
                 current_url = page.url.lower()
                 if "checkout" in current_url:
+                    logger.info(
+                        "checkout_navigation_success",
+                        selector=selector,
+                        url=current_url,
+                        session_id=str(session_id),
+                        viewport=viewport,
+                        domain=domain,
+                    )
                     return True
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                "checkout_selector_failed",
+                selector=selector,
+                error=str(e)[:100],
+                session_id=str(session_id),
+            )
             continue
 
     try:

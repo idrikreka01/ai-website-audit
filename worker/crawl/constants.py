@@ -300,6 +300,8 @@ POPUP_SELECTORS_MODAL = (
     '[class*="popup"] button[class*="close"]',
     '[role="dialog"] button[aria-label*="close" i]',
     '[role="dialog"] [class*="close"]',
+    ".icon-close",
+    "i.icon-close",
     'button:has-text("Close")',
 )
 

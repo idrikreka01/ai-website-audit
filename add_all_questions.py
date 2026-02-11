@@ -4,6 +4,7 @@ Script to add all audit questions to the database via API.
 
 Run with: python add_all_questions.py
 """
+
 # ruff: noqa: E501
 
 import json

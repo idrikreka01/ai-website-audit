@@ -8,11 +8,14 @@ No behavior change.
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
 
 from playwright.async_api import Browser, async_playwright
 
+from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
 from worker.artifacts import (
     save_features_json,
@@ -21,11 +24,7 @@ from worker.artifacts import (
     save_visible_text,
     should_store_html,
 )
-from worker.html_analysis import analyze_product_html
 from worker.checkout_flow import run_checkout_flow
-from pathlib import Path
-import json
-from shared.config import get_config
 from worker.constants import HOMEPAGE_VIEWPORTS, PDP_VIEWPORTS
 from worker.crawl import (
     CONSENT_POSITIONING_DELAY_MS,
@@ -47,6 +46,7 @@ from worker.crawl import (
     wait_for_page_ready,
 )
 from worker.error_summary import get_user_safe_error_summary
+from worker.html_analysis import analyze_product_html
 from worker.low_confidence import evaluate_low_confidence, evaluate_low_confidence_pdp
 from worker.repository import AuditRepository
 
@@ -445,7 +445,7 @@ async def crawl_homepage_viewport(
                             html_content,
                         )
                     )
-                
+
                 if page_type == "pdp" and html_content:
                     analyze_product_html(
                         html_content,
@@ -456,7 +456,7 @@ async def crawl_homepage_viewport(
                         domain,
                         repository,
                     )
-                    
+
                     try:
                         config = get_config()
                         artifacts_root = Path(config.artifacts_dir)
@@ -465,25 +465,23 @@ async def crawl_homepage_viewport(
                             normalized_domain = normalized_domain[4:]
                         normalized_domain = normalized_domain or "unknown-domain"
                         root_name = f"{normalized_domain}__{session_id}"
-                        json_path = (
-                            artifacts_root / root_name / "pdp" / "html_analysis.json"
-                        )
-                        
+                        json_path = artifacts_root / root_name / "pdp" / "html_analysis.json"
+
                         if json_path.exists():
                             with open(json_path, "r", encoding="utf-8") as f:
                                 html_analysis_json = json.load(f)
                             html_analysis_json["_file_path"] = str(json_path.absolute())
-                            
+
                             logger.info(
                                 "checkout_flow_starting",
                                 session_id=str(session_id),
                                 viewport=viewport,
                                 domain=domain,
                             )
-                            
+
                             await run_checkout_flow(
                                 page,
-                                pdp_url,
+                                url,
                                 html_analysis_json,
                                 session_id,
                                 viewport,
@@ -896,7 +894,7 @@ async def crawl_pdp_viewport(
                             html_content,
                         )
                     )
-                
+
                 if page_type == "pdp" and html_content:
                     analyze_product_html(
                         html_content,
@@ -907,7 +905,7 @@ async def crawl_pdp_viewport(
                         domain,
                         repository,
                     )
-                    
+
                     try:
                         config = get_config()
                         artifacts_root = Path(config.artifacts_dir)
@@ -916,22 +914,20 @@ async def crawl_pdp_viewport(
                             normalized_domain = normalized_domain[4:]
                         normalized_domain = normalized_domain or "unknown-domain"
                         root_name = f"{normalized_domain}__{session_id}"
-                        json_path = (
-                            artifacts_root / root_name / "pdp" / "html_analysis.json"
-                        )
-                        
+                        json_path = artifacts_root / root_name / "pdp" / "html_analysis.json"
+
                         if json_path.exists():
                             with open(json_path, "r", encoding="utf-8") as f:
                                 html_analysis_json = json.load(f)
                             html_analysis_json["_file_path"] = str(json_path.absolute())
-                            
+
                             logger.info(
                                 "checkout_flow_starting",
                                 session_id=str(session_id),
                                 viewport=viewport,
                                 domain=domain,
                             )
-                            
+
                             await run_checkout_flow(
                                 page,
                                 pdp_url,

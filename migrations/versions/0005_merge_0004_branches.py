@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-from alembic import op
-
 revision: str = "0005_merge_0004_branches"
 down_revision: Union[str, tuple[str, ...], None] = (
     "0004_add_audit_questions",

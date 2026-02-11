@@ -14,10 +14,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from shared.db import get_db_session
-from shared.logging import configure_logging
-from worker.ecom_navigator import UniversalEcomNavigator
-from worker.repository import AuditRepository
+from shared.db import get_db_session  # noqa: E402
+from shared.logging import configure_logging  # noqa: E402
+from worker.ecom_navigator import UniversalEcomNavigator  # noqa: E402
+from worker.repository import AuditRepository  # noqa: E402
 
 
 async def main() -> None:

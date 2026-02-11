@@ -41,7 +41,7 @@ def analyze_product_html(
 
     Supports manual and automatic modes controlled by HTML_ANALYSIS_MODE env var.
     Returns the analysis JSON dict, or None on failure.
-    
+
     For mobile viewport, reuses JSON from desktop if it exists to avoid duplicate API calls.
     """
     if page_type not in ("product", "pdp"):
@@ -50,16 +50,16 @@ def analyze_product_html(
 
     storage_page_type = "pdp" if page_type == "product" else page_type
     config = get_config()
-    
+
     artifacts_root = Path(config.artifacts_dir)
     normalized_domain = (domain or "").strip().lower()
     if normalized_domain.startswith("www."):
         normalized_domain = normalized_domain[4:]
     normalized_domain = normalized_domain or "unknown-domain"
     root_name = f"{normalized_domain}__{session_id}"
-    
+
     shared_analysis_path = artifacts_root / root_name / storage_page_type / "html_analysis.json"
-    
+
     if viewport == "mobile" and shared_analysis_path.exists():
         logger.info(
             "html_analysis_reusing_desktop_json",
@@ -84,16 +84,30 @@ def analyze_product_html(
                 session_id=str(session_id),
                 viewport=viewport,
             )
-    
+
     mode = config.html_analysis_mode.lower()
-    
+
     if mode == "manual":
         return _analyze_manual_mode(
-            html_content, session_id, page_id, storage_page_type, viewport, domain, repository, shared_analysis_path
+            html_content,
+            session_id,
+            page_id,
+            storage_page_type,
+            viewport,
+            domain,
+            repository,
+            shared_analysis_path,
         )
     else:
         return _analyze_automatic_mode(
-            html_content, session_id, page_id, storage_page_type, viewport, domain, repository, shared_analysis_path
+            html_content,
+            session_id,
+            page_id,
+            storage_page_type,
+            viewport,
+            domain,
+            repository,
+            shared_analysis_path,
         )
 
 
@@ -124,20 +138,23 @@ def _analyze_manual_mode(
         html_file_path.write_text(html_content, encoding="utf-8")
 
         analysis_path = shared_analysis_path
-        flag_file = analysis_path.parent / "html_analysis_ready.flag"
 
         config = get_config()
         if config.telegram_bot_token and config.telegram_chat_id:
             try:
                 from shared.telegram import send_telegram_message
-                
+
                 prompt_path = Path(__file__).parent.parent / "promp.txt"
                 prompt_preview = ""
                 if prompt_path.exists():
                     with open(prompt_path, "r", encoding="utf-8") as f:
                         prompt_content = f.read()
-                        prompt_preview = f"\n\n📋 <b>Prompt preview (first 300 chars):</b>\n<pre>{prompt_content[:300]}...</pre>"
-                
+                        preview_text = prompt_content[:300]
+                        prompt_preview = (
+                            f"\n\n📋 <b>Prompt preview (first 300 chars):</b>\n"
+                            f"<pre>{preview_text}...</pre>"
+                        )
+
                 message = f"""🔍 <b>HTML Analysis Required - Manual Mode</b>
 
 📄 <b>Domain:</b> {domain}
@@ -155,7 +172,7 @@ def _analyze_manual_mode(
 3. Save the JSON response to the path above
 
 ⏳ Waiting for JSON file...{prompt_preview}"""
-                
+
                 result = send_telegram_message(
                     bot_token=config.telegram_bot_token,
                     chat_id=config.telegram_chat_id,
@@ -167,14 +184,19 @@ def _analyze_manual_mode(
                 else:
                     logger.warning("telegram_notification_failed", session_id=str(session_id))
             except Exception as e:
-                logger.warning("telegram_notification_failed", error=str(e), error_type=type(e).__name__, session_id=str(session_id))
+                logger.warning(
+                    "telegram_notification_failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    session_id=str(session_id),
+                )
 
         print("\n" + "=" * 80)
         print("HTML ANALYSIS - MANUAL MODE")
         print("=" * 80)
-        print(f"\nHTML file saved at:")
+        print("\nHTML file saved at:")
         print(f"  {html_file_path.absolute()}")
-        print(f"\nExpected JSON output file:")
+        print("\nExpected JSON output file:")
         print(f"  {analysis_path.absolute()}")
         print("\nPlease:")
         print("  1. Upload the HTML file to ChatGPT")
@@ -186,6 +208,7 @@ def _analyze_manual_mode(
         sys.stdout.flush()
 
         import time
+
         max_wait_seconds = 3600
         wait_interval = 2
         waited = 0
@@ -206,11 +229,12 @@ def _analyze_manual_mode(
 
         with open(analysis_path, "r", encoding="utf-8") as f:
             analysis_json = json.load(f)
-        
+
         config = get_config()
         if config.telegram_bot_token and config.telegram_chat_id:
             try:
                 from shared.telegram import send_telegram_json
+
                 send_telegram_json(
                     bot_token=config.telegram_bot_token,
                     chat_id=config.telegram_chat_id,
@@ -309,7 +333,7 @@ def _analyze_automatic_mode(
     repository: AuditRepository,
     shared_analysis_path: Path,
 ) -> Optional[dict]:
-    """Automatic mode: use OpenAI API with file upload."""
+    """Automatic mode: use OpenAI Responses API with chunked HTML and JSON-only output."""
     try:
         prompt_path = Path(__file__).parent.parent / "promp.txt"
         if not prompt_path.exists():
@@ -317,7 +341,7 @@ def _analyze_automatic_mode(
             return None
 
         with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt_template = f.read()
+            base_prompt = f.read().strip()
 
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
@@ -333,131 +357,213 @@ def _analyze_automatic_mode(
 
         client = OpenAI(api_key=api_key)
 
-        logger.info("html_analysis_started", session_id=str(session_id), page_id=str(page_id), viewport=viewport)
+        logger.info(
+            "html_analysis_started",
+            session_id=str(session_id),
+            page_id=str(page_id),
+            viewport=viewport,
+        )
 
-        temp_html_file = shared_analysis_path.parent / f"temp_html_{session_id}_{viewport}.html"
-        ensure_artifact_dir(temp_html_file)
-        temp_html_file.write_text(html_content, encoding="utf-8")
+        config = get_config()
+        telegram_bot_token = getattr(config, "telegram_bot_token", None)
+        telegram_chat_id = getattr(config, "telegram_chat_id", None)
+        telegram_enabled = bool(telegram_bot_token and telegram_chat_id)
 
-        uploaded_file = None
-        assistant = None
-        response_text = None
+        model_name = os.getenv("HTML_ANALYSIS_MODEL", "gpt-5.2")
 
-        try:
-            logger.info("uploading_html_file", file_path=str(temp_html_file), session_id=str(session_id))
-            
-            with open(temp_html_file, "rb") as f:
-                uploaded_file = client.files.create(
-                    file=f,
-                    purpose="assistants"
-                )
-            
-            logger.info("html_file_uploaded", file_id=uploaded_file.id, session_id=str(session_id))
-
-            assistant = client.beta.assistants.create(
-                name="HTML Analysis Assistant",
-                instructions="You are an HTML analysis engine. Return ONLY valid JSON, no markdown, no explanations.",
-                model="gpt-4o",
-                tools=[{"type": "code_interpreter"}],
-            )
-
-            thread = client.beta.threads.create(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt_template,
-                        "attachments": [
-                            {
-                                "file_id": uploaded_file.id,
-                                "tools": [{"type": "code_interpreter"}]
-                            }
-                        ]
-                    }
-                ]
-            )
-
-            run = client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=assistant.id,
-            )
-
-            import time
-            max_wait = 300
-            waited = 0
-            while run.status in ["queued", "in_progress"]:
-                if waited >= max_wait:
-                    raise TimeoutError("Assistant run timed out")
-                time.sleep(2)
-                waited += 2
-                run = client.beta.threads.runs.retrieve(
-                    thread_id=thread.id,
-                    run_id=run.id
-                )
-
-            if run.status != "completed":
-                raise Exception(f"Assistant run failed with status: {run.status}")
-
-            messages = client.beta.threads.messages.list(thread_id=thread.id)
-            
-            response_text = None
-            for message in messages.data:
-                if message.role == "assistant":
-                    for content_item in message.content:
-                        if hasattr(content_item, 'text') and hasattr(content_item.text, 'value'):
-                            response_text = content_item.text.value
-                            break
-                    if response_text:
-                        break
-            
-            if not response_text:
-                logger.error(
-                    "html_analysis_no_assistant_response",
-                    session_id=str(session_id),
-                    message_count=len(messages.data),
-                    message_roles=[msg.role for msg in messages.data]
-                )
-                raise Exception("No assistant response found in messages")
-
-        finally:
-            if assistant:
-                try:
-                    client.beta.assistants.delete(assistant.id)
-                    logger.info("assistant_deleted", assistant_id=assistant.id, session_id=str(session_id))
-                except Exception as e:
-                    logger.warning("assistant_delete_failed", error=str(e), session_id=str(session_id))
-            
-            if uploaded_file:
-                try:
-                    client.files.delete(uploaded_file.id)
-                    logger.info("temp_file_deleted", file_id=uploaded_file.id, session_id=str(session_id))
-                except Exception as e:
-                    logger.warning("temp_file_delete_failed", error=str(e), session_id=str(session_id))
-            
+        if telegram_enabled:
             try:
-                if temp_html_file.exists():
-                    temp_html_file.unlink()
-            except Exception as e:
-                logger.warning("local_temp_file_delete_failed", error=str(e), session_id=str(session_id))
+                from shared.telegram import send_telegram_message
 
-        if not response_text:
-            logger.error("html_analysis_empty_response")
+                send_telegram_message(
+                    bot_token=telegram_bot_token,
+                    chat_id=telegram_chat_id,
+                    message=(
+                        "1. Preparing HTML analysis (automatic mode)\n"
+                        f"Domain: {domain}\n"
+                        f"Session: {session_id}\n"
+                        f"Viewport: {viewport}\n"
+                        f"Model: {model_name}"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.warning("telegram_step_notification_failed", step="prepare", error=str(e))
+
+        def _chunk_text(s: str, chunk_chars: int) -> list[str]:
+            return [s[i : i + chunk_chars] for i in range(0, len(s), chunk_chars)]
+
+        def _extract_output_text(resp) -> str:
+            text = getattr(resp, "output_text", None)
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+            out = getattr(resp, "output", None)
+            try:
+                if out and len(out) > 0:
+                    content = out[0].content
+                    if content and len(content) > 0:
+                        inner = content[0]
+                        inner_text = getattr(inner, "text", None)
+                        if isinstance(inner_text, str) and inner_text.strip():
+                            return inner_text.strip()
+            except Exception:
+                pass
+            return str(resp).strip()
+
+        def _call_json_only(user_text: str) -> Optional[dict]:
+            """Call Responses API and force JSON-only output with one retry."""
+            for attempt in (1, 2):
+                resp = client.responses.create(
+                    model=model_name,
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": user_text,
+                                }
+                            ],
+                        }
+                    ],
+                    text={"format": {"type": "json_object"}},
+                )
+                raw = _extract_output_text(resp)
+                try:
+                    return json.loads(raw)
+                except Exception:
+                    if attempt == 1:
+                        user_text = (
+                            "Your previous response was NOT valid JSON.\n"
+                            "Return ONLY valid JSON. No markdown, no code fences, no extra text.\n"
+                            "Output must start with { or [ and end with } or ].\n\n" + user_text
+                        )
+                        continue
+                    logger.error(
+                        "html_analysis_json_decode_failed_partial",
+                        session_id=str(session_id),
+                        viewport=viewport,
+                    )
+                    return None
             return None
 
-        analysis_json = json.loads(response_text)
-        
-        config = get_config()
-        if config.telegram_bot_token and config.telegram_chat_id:
+        html = html_content or ""
+        if not html.strip():
+            logger.error("html_analysis_empty_html")
+            return None
+
+        chunk_chars = int(os.getenv("HTML_ANALYSIS_CHUNK_CHARS", "80000"))
+        max_chunks = int(os.getenv("HTML_ANALYSIS_MAX_CHUNKS", "25"))
+        strategy = os.getenv("HTML_ANALYSIS_CHUNK_STRATEGY", "all")
+
+        chunks = _chunk_text(html, chunk_chars)
+        total_chunks = len(chunks)
+
+        if strategy == "head":
+            selected = chunks[:1]
+        elif strategy == "all":
+            selected = chunks
+        else:
+            selected = chunks[:1] + (chunks[-1:] if len(chunks) > 1 else [])
+
+        if len(selected) > max_chunks:
+            selected = selected[:max_chunks]
+
+        logger.info(
+            "html_chunking_config",
+            total_chunks=total_chunks,
+            selected_chunks=len(selected),
+            chunk_chars=chunk_chars,
+            strategy=strategy,
+        )
+
+        if telegram_enabled:
             try:
-                from shared.telegram import send_telegram_json
+                from shared.telegram import send_telegram_message
+
+                send_telegram_message(
+                    bot_token=telegram_bot_token,
+                    chat_id=telegram_chat_id,
+                    message=(
+                        "2. Sending HTML chunks to OpenAI (automatic mode)\n"
+                        f"Domain: {domain}\n"
+                        f"Session: {session_id}\n"
+                        f"Viewport: {viewport}\n"
+                        f"Model: {model_name}\n"
+                        f"Chunks: {len(selected)} of {total_chunks}"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception as e:
+                logger.warning(
+                    "telegram_step_notification_failed", step="send_chunks", error=str(e)
+                )
+
+        partials: list[dict] = []
+        for idx, ch in enumerate(selected, start=1):
+            user_text = (
+                base_prompt
+                + "\n\n"
+                + "IMPORTANT: You are receiving only a PARTIAL CHUNK of the full HTML.\n"
+                + "Extract whatever you can FROM THIS CHUNK ONLY. If unknown, leave null/empty.\n"
+                + f"CHUNK {idx} of {len(selected)}\n"
+                + "RAW HTML CHUNK:\n"
+                + ch
+            )
+            part = _call_json_only(user_text)
+            if isinstance(part, dict):
+                part["_chunk_index"] = idx
+                part["_chunk_total"] = len(selected)
+                partials.append(part)
+
+        if not partials:
+            logger.error("html_analysis_no_partials_generated")
+            return None
+
+        consolidate_text = (
+            base_prompt
+            + "\n\n"
+            + "Now you will receive multiple PARTIAL JSON outputs from separate HTML chunks.\n"
+            + "Merge them into ONE final JSON that matches the OUTPUT schema EXACTLY.\n"
+            + "Rules:\n"
+            + "- Return JSON ONLY.\n"
+            + "- Prefer selectors scoped to the purchase form.\n"
+            + "- Deduplicate variant groups/options.\n"
+            + "- If conflicts, prefer the most specific/stable selectors.\n\n"
+            + "PARTIAL_JSON_LIST:\n"
+            + json.dumps(partials, ensure_ascii=False)
+        )
+
+        analysis_json = _call_json_only(consolidate_text)
+        if not isinstance(analysis_json, dict):
+            logger.error("html_analysis_consolidation_failed")
+            return None
+
+        if telegram_enabled:
+            try:
+                from shared.telegram import send_telegram_json, send_telegram_message
+
+                send_telegram_message(
+                    bot_token=telegram_bot_token,
+                    chat_id=telegram_chat_id,
+                    message=(
+                        "3. OpenAI response received (automatic mode)\n"
+                        f"Domain: {domain}\n"
+                        f"Session: {session_id}\n"
+                        f"Viewport: {viewport}"
+                    ),
+                    parse_mode="HTML",
+                )
+
                 send_telegram_json(
-                    bot_token=config.telegram_bot_token,
-                    chat_id=config.telegram_chat_id,
+                    bot_token=telegram_bot_token,
+                    chat_id=telegram_chat_id,
                     title=f"ChatGPT Response - {domain}",
                     data=analysis_json,
                 )
             except Exception as e:
                 logger.warning("telegram_notification_failed", error=str(e))
-        
+
         analysis_path = shared_analysis_path
         ensure_artifact_dir(analysis_path)
         size, checksum = write_json(analysis_path, analysis_json)
@@ -498,22 +604,6 @@ def _analyze_automatic_mode(
 
         analysis_json["_file_path"] = str(analysis_path.absolute())
         return analysis_json
-
-    except json.JSONDecodeError as e:
-        logger.error(
-            "html_analysis_json_decode_failed",
-            error=str(e),
-            session_id=str(session_id),
-            page_id=str(page_id),
-        )
-        repository.create_log(
-            session_id=session_id,
-            level="error",
-            event_type="html_analysis",
-            message="HTML analysis JSON decode failed",
-            details={"error": str(e), "error_type": type(e).__name__},
-        )
-        return None
 
     except Exception as e:
         logger.error(

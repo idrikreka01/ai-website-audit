@@ -15,7 +15,6 @@ from uuid import UUID
 from shared.config import get_config
 from shared.logging import get_logger
 from worker.repository import AuditRepository
-from worker.html_analysis import analyze_product_html
 from worker.storage import (
     build_artifact_path,
     build_session_log_artifact_path,

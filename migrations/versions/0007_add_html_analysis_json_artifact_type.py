@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import Sequence, Union
 
-import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0007_add_html_analysis_json"
 down_revision: Union[str, None] = "0006_html_analysis_event"
