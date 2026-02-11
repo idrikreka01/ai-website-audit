@@ -115,6 +115,12 @@ def get_audit_questions_table() -> Table:
 
 
 def get_audit_question_results_table() -> Table:
-    """Get the audit_question_results table."""
+    """Get the audit_question_results table (legacy, may not exist after migration 0010)."""
     metadata = get_table_metadata()
-    return metadata.tables["audit_question_results"]
+    return metadata.tables.get("audit_question_results")
+
+
+def get_audit_results_table() -> Table:
+    """Get the audit_results table."""
+    metadata = get_table_metadata()
+    return metadata.tables["audit_results"]

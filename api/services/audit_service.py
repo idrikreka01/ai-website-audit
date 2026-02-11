@@ -17,7 +17,6 @@ from api.schemas import (
     ArtifactResponse,
     AuditPageResponse,
     AuditQuestionResponse,
-    AuditQuestionResultResponse,
     AuditSessionResponse,
     CreateAuditQuestionRequest,
     CreateAuditResponse,
@@ -354,33 +353,12 @@ class AuditService:
             logger.info("audit_question_deleted", question_id=str(question_id))
         return deleted
 
-    def get_question_results_by_audit(self, audit_id: UUID) -> list[AuditQuestionResultResponse]:
-        """
-        Get all question results for an audit session.
-
-        Returns a list of results.
-        """
-        results_data = self.repository.get_question_results_by_audit_id(audit_id)
-        return [AuditQuestionResultResponse(**r) for r in results_data]
-
-    def get_question_results_by_question(
-        self, question_id: UUID
-    ) -> list[AuditQuestionResultResponse]:
-        """
-        Get all results for a specific question across all audits.
-
-        Returns a list of results.
-        """
-        results_data = self.repository.get_question_results_by_question_id(question_id)
-        return [AuditQuestionResultResponse(**r) for r in results_data]
-
-    def get_question_result(self, result_id: UUID) -> Optional[AuditQuestionResultResponse]:
-        """
-        Get a question result by ID.
-
-        Returns None if not found.
-        """
-        result_data = self.repository.get_question_result(result_id)
-        if result_data is None:
-            return None
-        return AuditQuestionResultResponse(**result_data)
+    # TODO: Implement new audit_results methods using AuditResultResponse schema
+    # def get_results_by_session(self, session_id: str) -> list[AuditResultResponse]:
+    #     ...
+    #
+    # def get_results_by_question(self, question_id: int) -> list[AuditResultResponse]:
+    #     ...
+    #
+    # def get_result(self, result_id: int) -> Optional[AuditResultResponse]:
+    #     ...
