@@ -31,6 +31,7 @@ from worker.crawl import (
     wait_for_page_ready,
 )
 from worker.crawl.navigation_retry import navigate_with_retry
+from worker.html_analysis import analyze_product_html
 from worker.repository import AuditRepository
 
 logger = get_logger(__name__)
@@ -1158,6 +1159,17 @@ async def _capture_page_payloads(
             domain,
             html_content,
         )
+
+        if page_type == "cart" and html_content:
+            analyze_product_html(
+                None,
+                session_id,
+                page_id,
+                page_type,
+                viewport,
+                domain,
+                repository,
+            )
 
         repository.update_page(page_id, status="ok", load_timings={})
 
