@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -479,7 +480,7 @@ async def crawl_homepage_viewport(
                                 domain=domain,
                             )
 
-                            await run_checkout_flow(
+                            checkout_result = await run_checkout_flow(
                                 page,
                                 url,
                                 html_analysis_json,
@@ -506,6 +507,13 @@ async def crawl_homepage_viewport(
                             error_type=type(e).__name__,
                             session_id=str(session_id),
                         )
+                        checkout_result = {
+                            "variant_selection": {"status": "error", "error": str(e)},
+                            "add_to_cart": {"status": "error"},
+                            "cart_navigation": {"status": "error"},
+                            "checkout_navigation": {"status": "error"},
+                            "errors": [f"Checkout flow exception: {str(e)}"],
+                        }
 
                 break
             except Exception as e:
@@ -657,6 +665,7 @@ async def crawl_pdp_viewport(
     error_summary = None
     screenshot_failed = False
     screenshot_blank = False
+    checkout_result: Optional[dict] = None
 
     try:
         context = await create_browser_context(browser, viewport)
@@ -939,7 +948,7 @@ async def crawl_pdp_viewport(
                                 domain=domain,
                             )
 
-                            await run_checkout_flow(
+                            checkout_result = await run_checkout_flow(
                                 page,
                                 pdp_url,
                                 html_analysis_json,
@@ -955,6 +964,13 @@ async def crawl_pdp_viewport(
                             error_type=type(e).__name__,
                             session_id=str(session_id),
                         )
+                        checkout_result = {
+                            "variant_selection": {"status": "error", "error": str(e)},
+                            "add_to_cart": {"status": "error"},
+                            "cart_navigation": {"status": "error"},
+                            "checkout_navigation": {"status": "error"},
+                            "errors": [f"Checkout flow exception: {str(e)}"],
+                        }
 
                 break
             except Exception as e:
@@ -1041,11 +1057,28 @@ async def crawl_pdp_viewport(
         if context:
             await context.close()
 
-    return success, {
+    page_data = {
         "page_id": page_id,
         "load_timings": load_timings,
         "error_summary": error_summary,
     }
+    
+    if checkout_result is not None:
+        page_data["checkout_result"] = checkout_result
+        logger.info(
+            "checkout_result_included_in_page_data",
+            session_id=str(session_id),
+            viewport=viewport,
+            checkout_result_keys=list(checkout_result.keys()) if isinstance(checkout_result, dict) else None,
+        )
+    else:
+        logger.info(
+            "checkout_result_not_available",
+            session_id=str(session_id),
+            viewport=viewport,
+        )
+    
+    return success, page_data
 
 
 async def crawl_pdp_async(

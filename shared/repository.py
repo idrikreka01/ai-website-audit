@@ -521,6 +521,45 @@ class AuditRepository:
                 page_coverage_score=verify_row.page_coverage_score,
             )
 
+    def update_session_functional_flow(
+        self,
+        session_id: UUID,
+        functional_flow_score: int,
+        functional_flow_details: Optional[dict] = None,
+    ) -> None:
+        """
+        Update functional flow flags on audit session.
+
+        Args:
+            session_id: The session ID to update
+            functional_flow_score: Score 0-3 (add_to_cart + cart_page + checkout_page)
+            functional_flow_details: Optional full checkout_result dict for debugging
+        """
+        from shared.logging import get_logger
+        
+        logger = get_logger(__name__)
+        logger.info(
+            "updating_session_functional_flow",
+            session_id=str(session_id),
+            functional_flow_score=functional_flow_score,
+        )
+        
+        update_stmt = (
+            self.sessions_table.update()
+            .where(self.sessions_table.c.id == session_id)
+            .values(
+                functional_flow_score=functional_flow_score,
+                functional_flow_details=functional_flow_details,
+            )
+        )
+        result = self.session.execute(update_stmt)
+        logger.info(
+            "update_session_functional_flow_executed",
+            session_id=str(session_id),
+            rows_affected=result.rowcount,
+        )
+        self.session.flush()
+
     def create_question(
         self,
         *,

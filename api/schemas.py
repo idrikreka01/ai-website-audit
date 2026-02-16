@@ -55,6 +55,8 @@ class AuditSessionResponse(BaseModel):
     cart_ok: bool = False
     checkout_ok: bool = False
     page_coverage_score: int = Field(0, ge=0, le=4)
+    functional_flow_score: int = Field(0, ge=0, le=3)
+    functional_flow_details: Optional[dict] = None
     pages: list[AuditPageResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
