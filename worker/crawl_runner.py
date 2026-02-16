@@ -488,6 +488,17 @@ async def crawl_homepage_viewport(
                                 domain,
                                 repository,
                             )
+                            
+                            from worker.orchestrator import _compute_and_store_page_coverage
+                            try:
+                                _compute_and_store_page_coverage(session_id, repository)
+                            except Exception as coverage_error:
+                                logger.warning(
+                                    "page_coverage_after_checkout_failed",
+                                    error=str(coverage_error),
+                                    error_type=type(coverage_error).__name__,
+                                    session_id=str(session_id),
+                                )
                     except Exception as e:
                         logger.warning(
                             "checkout_flow_failed",
