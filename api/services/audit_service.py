@@ -206,6 +206,8 @@ class AuditService:
             cart_ok=session_data.get("cart_ok", False),
             checkout_ok=session_data.get("checkout_ok", False),
             page_coverage_score=session_data.get("page_coverage_score", 0),
+            functional_flow_score=session_data.get("functional_flow_score", 0),
+            functional_flow_details=session_data.get("functional_flow_details"),
             pages=pages,
         )
 

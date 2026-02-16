@@ -8,6 +8,7 @@ No behavior change.
 from __future__ import annotations
 
 import asyncio
+from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -18,6 +19,26 @@ from worker.repository import AuditRepository
 from worker.session_status import compute_session_status, session_low_confidence_from_pages
 
 logger = get_logger(__name__)
+
+
+def compute_functional_flow_score(checkout_result: dict) -> int:
+    """
+    Compute functional flow score (0-3) from checkout result.
+    
+    Args:
+        checkout_result: Dict from run_checkout_flow() with add_to_cart, cart_navigation, checkout_navigation
+        
+    Returns:
+        Score 0-3: +1 for add_to_cart completed, +1 for cart_navigation completed, +1 for checkout_navigation completed
+    """
+    score = 0
+    if checkout_result.get("add_to_cart", {}).get("status") == "completed":
+        score += 1
+    if checkout_result.get("cart_navigation", {}).get("status") == "completed":
+        score += 1
+    if checkout_result.get("checkout_navigation", {}).get("status") == "completed":
+        score += 1
+    return score
 
 
 def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditRepository) -> None:
@@ -384,10 +405,52 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 )
 
     results_pdp: dict = {}
+    checkout_result: Optional[dict] = None
     if pdp_url:
         results_pdp = asyncio.run(
             crawl_pdp_async(pdp_url, session_uuid, repository, mode, first_time)
         )
+        
+        for viewport in ["desktop", "mobile"]:
+            viewport_data = results_pdp.get(viewport, {})
+            logger.info(
+                "checking_viewport_for_checkout_result",
+                session_id=str(session_uuid),
+                viewport=viewport,
+                has_checkout_result="checkout_result" in viewport_data,
+                viewport_keys=list(viewport_data.keys()),
+            )
+            if "checkout_result" in viewport_data:
+                checkout_result = viewport_data["checkout_result"]
+                logger.info(
+                    "checkout_result_found",
+                    session_id=str(session_uuid),
+                    viewport=viewport,
+                    checkout_result_keys=list(checkout_result.keys()) if isinstance(checkout_result, dict) else None,
+                )
+                break
+        
+        if checkout_result:
+            try:
+                score = compute_functional_flow_score(checkout_result)
+                repository.update_session_functional_flow(
+                    session_id=session_uuid,
+                    functional_flow_score=score,
+                    functional_flow_details=checkout_result,
+                )
+                logger.info(
+                    "functional_flow_score_computed",
+                    session_id=str(session_uuid),
+                    functional_flow_score=score,
+                )
+            except Exception as e:
+                logger.error(
+                    "functional_flow_score_computation_failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    session_id=str(session_uuid),
+                )
+        
         try:
             _compute_and_store_page_coverage(session_uuid, repository)
         except Exception as e:
