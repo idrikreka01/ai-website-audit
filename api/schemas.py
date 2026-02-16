@@ -145,6 +145,7 @@ class AuditResultResponse(BaseModel):
     session_id: str
     result: Literal["pass", "fail"]
     reason: Optional[str] = None
+    confidence_score: int = Field(..., ge=1, le=10, description="Confidence score (1-10)")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -156,3 +157,4 @@ class CreateAuditResultRequest(BaseModel):
     session_id: str = Field(..., description="Session ID")
     result: Literal["pass", "fail"] = Field(..., description="Result: pass or fail")
     reason: Optional[str] = Field(None, description="Reason for the result")
+    confidence_score: int = Field(5, ge=1, le=10, description="Confidence score (1-10, defaults to 5)")

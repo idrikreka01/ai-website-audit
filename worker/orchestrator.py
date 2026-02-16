@@ -20,6 +20,187 @@ from worker.session_status import compute_session_status, session_low_confidence
 logger = get_logger(__name__)
 
 
+def _discover_page_types_from_artifacts(session_id_str: str, artifacts_dir: str = "./artifacts") -> list[str]:
+    """
+    Discover available page types by checking artifact directories.
+    
+    Args:
+        session_id_str: Session identifier (format: domain__uuid)
+        artifacts_dir: Base artifacts directory
+        
+    Returns:
+        List of page types that have both desktop and mobile artifacts
+    """
+    from pathlib import Path
+    
+    artifacts_path = Path(artifacts_dir) / session_id_str
+    if not artifacts_path.exists():
+        return []
+    
+    available_page_types = []
+    valid_page_types = ["homepage", "pdp", "cart", "checkout"]
+    
+    for page_type in valid_page_types:
+        page_type_path = artifacts_path / page_type
+        if not page_type_path.exists() or not page_type_path.is_dir():
+            continue
+        
+        desktop_path = page_type_path / "desktop"
+        mobile_path = page_type_path / "mobile"
+        
+        desktop_visible_text = (desktop_path / "visible_text.txt").exists()
+        desktop_features = (desktop_path / "features_json.json").exists()
+        desktop_has_artifacts = desktop_path.exists() and (desktop_visible_text or desktop_features)
+        
+        mobile_visible_text = (mobile_path / "visible_text.txt").exists()
+        mobile_features = (mobile_path / "features_json.json").exists()
+        mobile_has_artifacts = mobile_path.exists() and (mobile_visible_text or mobile_features)
+        
+        if desktop_has_artifacts and mobile_has_artifacts:
+            available_page_types.append(page_type)
+    
+    return available_page_types
+
+
+def _run_audit_evaluation_for_page_types(
+    session_uuid: UUID,
+    domain: str,
+    repository: AuditRepository,
+    page_types: list[str] = None,
+) -> None:
+    """
+    Run audit evaluation for page types. If page_types is None, auto-discover from artifacts.
+    
+    Args:
+        session_uuid: Session UUID
+        domain: Domain name
+        repository: Audit repository
+        page_types: Optional list of page types to evaluate. If None, discovers from artifacts.
+    """
+    from get_questions_by_page_type import get_questions_by_page_type
+    from audit_evaluator import AuditEvaluator
+    
+    normalized_domain = (domain or "").strip().lower()
+    if normalized_domain.startswith("www."):
+        normalized_domain = normalized_domain[4:]
+    normalized_domain = normalized_domain or "unknown-domain"
+    session_id_str = f"{normalized_domain}__{session_uuid}"
+    
+    if page_types is None:
+        page_types = _discover_page_types_from_artifacts(session_id_str)
+        logger.info(
+            "audit_evaluation_page_types_discovered",
+            page_types=page_types,
+            session_id=str(session_uuid),
+        )
+    
+    if not page_types:
+        logger.info(
+            "audit_evaluation_skipped",
+            reason="no_page_types_found",
+            session_id=str(session_uuid),
+        )
+        return
+    
+    for page_type in page_types:
+        from pathlib import Path
+        from shared.config import get_config
+        
+        config = get_config()
+        artifacts_path = Path(config.artifacts_dir) / session_id_str / page_type
+        
+        desktop_path = artifacts_path / "desktop"
+        mobile_path = artifacts_path / "mobile"
+        
+        desktop_visible_text = (desktop_path / "visible_text.txt").exists()
+        desktop_features = (desktop_path / "features_json.json").exists()
+        desktop_has_artifacts = desktop_path.exists() and (desktop_visible_text or desktop_features)
+        
+        mobile_visible_text = (mobile_path / "visible_text.txt").exists()
+        mobile_features = (mobile_path / "features_json.json").exists()
+        mobile_has_artifacts = mobile_path.exists() and (mobile_visible_text or mobile_features)
+        
+        if not (desktop_has_artifacts and mobile_has_artifacts):
+            logger.info(
+                "audit_evaluation_skipped",
+                page_type=page_type,
+                reason="missing_artifacts",
+                desktop_exists=desktop_has_artifacts,
+                mobile_exists=mobile_has_artifacts,
+                session_id=str(session_uuid),
+            )
+            continue
+        
+        try:
+            logger.info(
+                "audit_evaluation_starting",
+                page_type=page_type,
+                session_id=str(session_uuid),
+            )
+            
+            normalized_page_type = "product" if page_type == "pdp" else page_type
+            questions = get_questions_by_page_type(normalized_page_type)
+            if not questions.get("question"):
+                logger.warning(
+                    "audit_evaluation_skipped",
+                    page_type=page_type,
+                    reason="no_questions_found",
+                    session_id=str(session_uuid),
+                )
+                continue
+            
+            evaluator = AuditEvaluator(artifacts_dir="./artifacts")
+            results = evaluator.run_audit(
+                session_id=session_id_str,
+                page_type=normalized_page_type,
+                questions=questions.get("question", {}),
+                chunk_size=30000,
+                save_response=True,
+                include_screenshots=False,
+                repository=repository,
+            )
+            
+            logger.info(
+                "audit_evaluation_completed",
+                page_type=page_type,
+                results_count=len(results),
+                session_id=str(session_uuid),
+            )
+            
+            repository.create_log(
+                session_id=session_uuid,
+                level="info",
+                event_type="artifact",
+                message=f"Audit evaluation completed for {page_type}",
+                details={
+                    "page_type": page_type,
+                    "results_count": len(results),
+                    "pass_count": sum(1 for r in results.values() if r.get("result") == "PASS"),
+                    "fail_count": sum(1 for r in results.values() if r.get("result") == "FAIL"),
+                },
+            )
+            
+        except Exception as e:
+            logger.error(
+                "audit_evaluation_failed",
+                page_type=page_type,
+                error=str(e),
+                error_type=type(e).__name__,
+                session_id=str(session_uuid),
+            )
+            repository.create_log(
+                session_id=session_uuid,
+                level="error",
+                event_type="error",
+                message=f"Audit evaluation failed for {page_type}",
+                details={
+                    "page_type": page_type,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+
+
 def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository) -> None:
     """
     Run full audit session: homepage crawl, PDP discovery, PDP crawl, status rollup.
@@ -193,3 +374,5 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             "pdp_url": pdp_url,
         },
     )
+
+    _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)

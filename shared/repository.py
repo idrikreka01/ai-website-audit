@@ -21,6 +21,7 @@ from shared.db import (
     get_audit_pages_table,
     get_audit_question_results_table,
     get_audit_questions_table,
+    get_audit_results_table,
     get_audit_sessions_table,
     get_crawl_logs_table,
 )
@@ -37,6 +38,7 @@ class AuditRepository:
         self.logs_table = get_crawl_logs_table()
         self.questions_table = get_audit_questions_table()
         self.question_results_table = get_audit_question_results_table()
+        self.results_table = get_audit_results_table()
 
     def create_session(
         self,
@@ -680,3 +682,65 @@ class AuditRepository:
         if result is None:
             return None
         return dict(result._mapping)
+
+    def create_audit_result(
+        self,
+        *,
+        question_id: int,
+        session_id: str,
+        result: str,
+        reason: Optional[str] = None,
+        confidence_score: int = 5,
+    ) -> dict:
+        """
+        Create an audit result record.
+        
+        Args:
+            question_id: Question ID (integer)
+            session_id: Session ID (string format: domain__uuid)
+            result: Result value ("PASS" or "FAIL" - will be converted to lowercase)
+            reason: Optional reason text
+            confidence_score: Confidence score (1-10, defaults to 5)
+            
+        Returns:
+            Created result as a dict
+        """
+        result_lower = result.lower() if result else "fail"
+        if result_lower not in ["pass", "fail"]:
+            result_lower = "fail"
+        
+        confidence_score = max(1, min(10, confidence_score))
+        
+        insert_stmt = self.results_table.insert().values(
+            question_id=question_id,
+            session_id=session_id,
+            result=result_lower,
+            reason=reason,
+            confidence_score=confidence_score,
+        ).returning(self.results_table.c.result_id)
+        
+        result_row = self.session.execute(insert_stmt).one()
+        self.session.flush()
+        
+        result_id = result_row[0]
+        select_stmt = select(self.results_table).where(
+            self.results_table.c.result_id == result_id
+        )
+        row = self.session.execute(select_stmt).one()
+        return dict(row._mapping)
+    
+    def get_audit_results_by_session_id(self, session_id: str) -> list[dict]:
+        """
+        Get all audit results for a session.
+        
+        Args:
+            session_id: Session ID (string format: domain__uuid)
+            
+        Returns:
+            List of result dicts
+        """
+        stmt = select(self.results_table).where(
+            self.results_table.c.session_id == session_id
+        ).order_by(self.results_table.c.result_id)
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
