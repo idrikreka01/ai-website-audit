@@ -456,6 +456,71 @@ class AuditRepository:
         self.session.execute(update_stmt)
         self.session.flush()
 
+    def update_session_page_coverage(
+        self,
+        session_id: UUID,
+        homepage_ok: bool,
+        pdp_ok: bool,
+        cart_ok: bool,
+        checkout_ok: bool,
+        page_coverage_score: int,
+    ) -> None:
+        """
+        Update page coverage flags on audit session.
+
+        Args:
+            session_id: The session ID to update
+            homepage_ok: Whether homepage was successfully scraped (both viewports)
+            pdp_ok: Whether PDP was successfully scraped (both viewports)
+            cart_ok: Whether cart page was successfully scraped (both viewports)
+            checkout_ok: Whether checkout page was successfully scraped (both viewports)
+            page_coverage_score: Sum of the 4 boolean flags (0-4)
+        """
+        from shared.logging import get_logger
+        
+        logger = get_logger(__name__)
+        logger.info(
+            "updating_session_page_coverage",
+            session_id=str(session_id),
+            homepage_ok=homepage_ok,
+            pdp_ok=pdp_ok,
+            cart_ok=cart_ok,
+            checkout_ok=checkout_ok,
+            page_coverage_score=page_coverage_score,
+        )
+        
+        update_stmt = (
+            self.sessions_table.update()
+            .where(self.sessions_table.c.id == session_id)
+            .values(
+                homepage_ok=homepage_ok,
+                pdp_ok=pdp_ok,
+                cart_ok=cart_ok,
+                checkout_ok=checkout_ok,
+                page_coverage_score=page_coverage_score,
+            )
+        )
+        result = self.session.execute(update_stmt)
+        logger.info(
+            "update_session_page_coverage_executed",
+            session_id=str(session_id),
+            rows_affected=result.rowcount,
+        )
+        self.session.flush()
+        
+        verify_stmt = select(self.sessions_table).where(self.sessions_table.c.id == session_id)
+        verify_row = self.session.execute(verify_stmt).first()
+        if verify_row:
+            logger.info(
+                "update_session_page_coverage_verified",
+                session_id=str(session_id),
+                homepage_ok=verify_row.homepage_ok,
+                pdp_ok=verify_row.pdp_ok,
+                cart_ok=verify_row.cart_ok,
+                checkout_ok=verify_row.checkout_ok,
+                page_coverage_score=verify_row.page_coverage_score,
+            )
+
     def create_question(
         self,
         *,

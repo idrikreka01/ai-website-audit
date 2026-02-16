@@ -50,6 +50,11 @@ class AuditSessionResponse(BaseModel):
     crawl_policy_version: str
     config_snapshot: dict
     low_confidence: bool
+    homepage_ok: bool = False
+    pdp_ok: bool = False
+    cart_ok: bool = False
+    checkout_ok: bool = False
+    page_coverage_score: int = Field(0, ge=0, le=4)
     pages: list[AuditPageResponse] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)

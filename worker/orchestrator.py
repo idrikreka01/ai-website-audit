@@ -20,6 +20,55 @@ from worker.session_status import compute_session_status, session_low_confidence
 logger = get_logger(__name__)
 
 
+def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditRepository) -> None:
+    """
+    Compute page coverage flags by checking audit_pages table for both desktop and mobile.
+    
+    Args:
+        session_uuid: Session UUID
+        repository: Audit repository
+    """
+    pages = repository.get_pages_by_session_id(session_uuid)
+    
+    page_type_viewports = {}
+    for page in pages:
+        page_type = page["page_type"]
+        viewport = page["viewport"]
+        status = page["status"]
+        
+        if page_type not in page_type_viewports:
+            page_type_viewports[page_type] = {"desktop": False, "mobile": False}
+        
+        if status == "ok":
+            page_type_viewports[page_type][viewport] = True
+    
+    homepage_ok = page_type_viewports.get("homepage", {}).get("desktop", False) and page_type_viewports.get("homepage", {}).get("mobile", False)
+    pdp_ok = page_type_viewports.get("pdp", {}).get("desktop", False) and page_type_viewports.get("pdp", {}).get("mobile", False)
+    cart_ok = page_type_viewports.get("cart", {}).get("desktop", False) and page_type_viewports.get("cart", {}).get("mobile", False)
+    checkout_ok = page_type_viewports.get("checkout", {}).get("desktop", False) and page_type_viewports.get("checkout", {}).get("mobile", False)
+    
+    page_coverage_score = sum([homepage_ok, pdp_ok, cart_ok, checkout_ok])
+    
+    repository.update_session_page_coverage(
+        session_id=session_uuid,
+        homepage_ok=homepage_ok,
+        pdp_ok=pdp_ok,
+        cart_ok=cart_ok,
+        checkout_ok=checkout_ok,
+        page_coverage_score=page_coverage_score,
+    )
+    
+    logger.info(
+        "page_coverage_computed",
+        session_id=str(session_uuid),
+        homepage_ok=homepage_ok,
+        pdp_ok=pdp_ok,
+        cart_ok=cart_ok,
+        checkout_ok=checkout_ok,
+        page_coverage_score=page_coverage_score,
+    )
+
+
 def _discover_page_types_from_artifacts(session_id_str: str, artifacts_dir: str = "./artifacts") -> list[str]:
     """
     Discover available page types by checking artifact directories.
@@ -280,6 +329,17 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
 
     results = asyncio.run(crawl_homepage_async(url, session_uuid, repository, mode, first_time))
 
+    try:
+        _compute_and_store_page_coverage(session_uuid, repository)
+    except Exception as e:
+        logger.error(
+            "page_coverage_computation_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            session_id=str(session_uuid),
+            stage="after_homepage",
+        )
+
     pdp_candidate_urls = results.get("desktop", {}).get("pdp_candidate_urls", [])
     repository.create_log(
         session_id=session_uuid,
@@ -328,6 +388,16 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         results_pdp = asyncio.run(
             crawl_pdp_async(pdp_url, session_uuid, repository, mode, first_time)
         )
+        try:
+            _compute_and_store_page_coverage(session_uuid, repository)
+        except Exception as e:
+            logger.error(
+                "page_coverage_computation_failed",
+                error=str(e),
+                error_type=type(e).__name__,
+                session_id=str(session_uuid),
+                stage="after_pdp",
+            )
 
     home_desktop = results.get("desktop", {}).get("success", False)
     home_mobile = results.get("mobile", {}).get("success", False)
@@ -376,3 +446,14 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
     )
 
     _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)
+
+    try:
+        _compute_and_store_page_coverage(session_uuid, repository)
+    except Exception as e:
+        logger.error(
+            "page_coverage_computation_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            session_id=str(session_uuid),
+            stage="final",
+        )

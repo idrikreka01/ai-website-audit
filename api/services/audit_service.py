@@ -201,6 +201,11 @@ class AuditService:
             crawl_policy_version=session_data["crawl_policy_version"],
             config_snapshot=session_data["config_snapshot"],
             low_confidence=session_data["low_confidence"],
+            homepage_ok=session_data.get("homepage_ok", False),
+            pdp_ok=session_data.get("pdp_ok", False),
+            cart_ok=session_data.get("cart_ok", False),
+            checkout_ok=session_data.get("checkout_ok", False),
+            page_coverage_score=session_data.get("page_coverage_score", 0),
             pages=pages,
         )
 
