@@ -10,14 +10,13 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from api.db import get_db_session
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
     ArtifactResponse,
-    AuditPageResponse,
     AuditQuestionResponse,
     AuditReportResponse,
     AuditResultResponse,
@@ -182,7 +181,7 @@ def get_question_results(
 ) -> list[AuditResultResponse]:
     """
     Get all audit results for a specific question.
-    
+
     Returns all results across all sessions for the given question.
     """
     results = service.get_results_by_question(question_id)
@@ -280,7 +279,7 @@ def get_result(
 ) -> AuditResultResponse:
     """
     Get an audit result by ID.
-    
+
     Returns 404 if the result is not found.
     """
     result = service.get_result(result_id)
@@ -305,12 +304,12 @@ def get_audit_results(
 ) -> list[AuditResultResponse]:
     """
     Get all audit results for a session.
-    
+
     Returns all results for the given session. Returns an empty list if the
     session exists but has no results. Returns 404 if the session is not found.
     """
     bind_request_context(session_id=str(session_id))
-    
+
     session = service.get_audit_session(session_id)
     if session is None:
         logger.warning("audit_session_not_found_for_results", session_id=str(session_id))
@@ -318,7 +317,7 @@ def get_audit_results(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Audit session {session_id} not found",
         )
-    
+
     results = service.get_results_by_session(session_id)
     logger.debug(
         "audit_results_retrieved",
@@ -404,11 +403,11 @@ def get_audit_report(
 ) -> AuditReportResponse:
     """
     Generate and return JSON report for audit session.
-    
+
     Returns a JSON response with audit results, ordered by severity and filtered by tier logic.
     """
     bind_request_context(session_id=str(session_id))
-    
+
     session = service.get_audit_session(session_id)
     if session is None:
         logger.warning("audit_session_not_found_for_report", session_id=str(session_id))
@@ -416,26 +415,26 @@ def get_audit_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Audit session {session_id} not found",
         )
-    
+
     try:
         from worker.report_generator import generate_audit_report
         from worker.repository import AuditRepository
-        
+
         repository = AuditRepository(service.repository.session)
         report_data = generate_audit_report(session_id, repository)
-        
+
         if "error" in report_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=report_data.get("error", "Session not found"),
             )
-        
+
         logger.info(
             "json_report_generated",
             session_id=str(session_id),
             question_count=len(report_data.get("questions", [])),
         )
-        
+
         return AuditReportResponse(**report_data)
     except HTTPException:
         raise

@@ -166,9 +166,13 @@ class CreateAuditResultRequest(BaseModel):
 
     question_id: int = Field(..., description="Question ID")
     session_id: str = Field(..., description="Session ID")
-    result: Literal["pass", "fail", "unknown"] = Field(..., description="Result: pass, fail, or unknown")
+    result: Literal["pass", "fail", "unknown"] = Field(
+        ..., description="Result: pass, fail, or unknown"
+    )
     reason: Optional[str] = Field(None, description="Reason for the result")
-    confidence_score: int = Field(5, ge=1, le=10, description="Confidence score (1-10, defaults to 5)")
+    confidence_score: int = Field(
+        5, ge=1, le=10, description="Confidence score (1-10, defaults to 5)"
+    )
 
 
 class AuditReportQuestionResponse(BaseModel):

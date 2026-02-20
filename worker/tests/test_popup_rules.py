@@ -193,9 +193,9 @@ def test_popup_selectors_by_category_has_all_categories():
     for cat, selectors in POPUP_SELECTORS_BY_CATEGORY.items():
         assert isinstance(selectors, tuple), f"{cat} should be tuple"
         assert len(selectors) > 0, f"{cat} should be non-empty"
-        assert all(
-            isinstance(s, str) and s for s in selectors
-        ), f"{cat} selectors must be non-empty strings"
+        assert all(isinstance(s, str) and s for s in selectors), (
+            f"{cat} selectors must be non-empty strings"
+        )
 
 
 def test_overlay_first_and_default_same_total_selectors():

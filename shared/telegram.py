@@ -45,7 +45,7 @@ def send_telegram_message(
         return True
     except requests.exceptions.HTTPError as e:
         logger.warning(f"Failed to send Telegram message: {e}")
-        if hasattr(e.response, 'text'):
+        if hasattr(e.response, "text"):
             logger.warning(f"Telegram API response: {e.response.text}")
         return False
     except Exception as e:

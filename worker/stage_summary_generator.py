@@ -1,5 +1,5 @@
 """
-Stage summary generator: Creates AI-generated summaries for each stage (Awareness/Consideration/Conversion).
+Stage summary generator: AI-generated summaries per stage (Awareness/Consideration/Conversion).
 
 Follows developer spec for Revenue Recovery Audit stage summaries:
 - One paragraph, ~5 sentences
@@ -19,6 +19,7 @@ from typing import Optional
 from uuid import UUID
 
 from openai import OpenAI
+
 from shared.config import get_config
 from shared.logging import get_logger
 from worker.repository import AuditRepository
@@ -121,10 +122,7 @@ def _build_evidence_context(session_id: UUID, stage: str, repository: AuditRepos
     evidence_parts = []
     for page_type in relevant_pages:
         pages = repository.get_pages_by_session_id(session_id)
-        page_found = any(
-            p.get("page_type") == page_type and p.get("status") == "ok"
-            for p in pages
-        )
+        page_found = any(p.get("page_type") == page_type and p.get("status") == "ok" for p in pages)
         if page_found:
             evidence_parts.append(f"- {page_type} page loaded successfully")
         else:
@@ -132,9 +130,7 @@ def _build_evidence_context(session_id: UUID, stage: str, repository: AuditRepos
     return "\n".join(evidence_parts) if evidence_parts else "- No page context available"
 
 
-def _calculate_confidence_score(
-    session_id: UUID, stage: str, repository: AuditRepository
-) -> int:
+def _calculate_confidence_score(session_id: UUID, stage: str, repository: AuditRepository) -> int:
     score = 10
     page_types = {
         "Awareness": ["homepage"],
@@ -143,9 +139,7 @@ def _calculate_confidence_score(
     }
     pages = repository.get_pages_by_session_id(session_id)
     for page_type in page_types.get(stage, []):
-        page_ok = any(
-            p.get("page_type") == page_type and p.get("status") == "ok" for p in pages
-        )
+        page_ok = any(p.get("page_type") == page_type and p.get("status") == "ok" for p in pages)
         if not page_ok:
             score -= 2
     if stage == "Conversion":
@@ -213,7 +207,7 @@ OUTPUT REQUIREMENTS:
 - Tone: Helpful consultant, firm and friendly, no hype
 - Voice: Neutral, buyer perspective (describe what buyer may notice, miss, or hesitate on)
 - Use "we" sparingly
-- Impact language allowed but non-insulting (e.g., "This is likely lowering conversions" not aesthetic insults)
+- Impact language allowed but non-insulting (e.g. "likely lowering conversions")
 - Banned: leverage, optimize, dynamic, game changer, fluff adjectives
 - Numbers: Use "a few", "several", "most" - NEVER exact counts like "13 issues"
 - Do NOT mention changelog or checklist existence
@@ -234,7 +228,7 @@ EVIDENCE RULES:
 
 CLEAN STAGE RULES:
 - If stage is near perfect: Use "Praise plus one micro improvement framed as a test, not a fix"
-- Test should target highest impact area: messaging clarity (Awareness), product info/proof (Consideration), friction reduction (Conversion)
+- Test target: messaging (Awareness), product proof (Consideration), friction (Conversion)
 
 STAGE BOUNDARIES:
 - Awareness: Only homepage and navigation issues
@@ -256,7 +250,7 @@ def generate_stage_summary(
 ) -> dict:
     """
     Generate AI summary for a specific stage following developer spec.
-    
+
     Args:
         stage: Stage name (Awareness/Consideration/Conversion)
         questions: List of question result dicts for this stage
@@ -264,7 +258,7 @@ def generate_stage_summary(
         session_id: Session UUID for evidence context
         repository: AuditRepository for page context
         model: OpenAI model to use
-        
+
     Returns:
         Dict with summary text, metadata, confidence score, and cost info
     """
@@ -285,7 +279,6 @@ def generate_stage_summary(
         }
 
     passed_count = sum(1 for q in questions if (q.get("result") or "").lower() == "pass")
-    failed_questions = [q for q in questions if (q.get("result") or "").lower() == "fail"]
     score = calculate_stage_score(questions)
 
     tier1_questions = [q for q in questions if q.get("tier", 1) == 1]
@@ -293,7 +286,6 @@ def generate_stage_summary(
     tier1_failed = [q for q in tier1_questions if (q.get("result") or "").lower() == "fail"]
     tier2_failed = [q for q in tier2_questions if (q.get("result") or "").lower() == "fail"]
 
-    tier1_category_sums = _compute_category_severity_sums(tier1_questions, tier_filter=[1])
     tier2_category_sums = _compute_category_severity_sums(tier2_questions, tier_filter=[2])
     all_category_sums = _compute_category_severity_sums(questions, tier_filter=[1, 2])
 
@@ -303,9 +295,7 @@ def generate_stage_summary(
     elif len(tier1_failed) == 0 and len(tier2_failed) > 0:
         main_theme = _select_main_theme(stage, tier2_category_sums)
         tier2_sum = tier2_category_sums.get(main_theme, 0)
-        eligible_questions = _get_eligible_questions(
-            questions, main_theme, 0, tier2_sum
-        )
+        eligible_questions = _get_eligible_questions(questions, main_theme, 0, tier2_sum)
     else:
         main_theme = _select_main_theme(stage, all_category_sums)
         tier2_sum = tier2_category_sums.get(main_theme, 0)
@@ -314,7 +304,7 @@ def generate_stage_summary(
         )
 
     eligible_questions.sort(key=lambda q: q.get("severity", 1), reverse=True)
-    
+
     if len(eligible_questions) >= 10:
         eligible_questions = [
             q
@@ -324,36 +314,33 @@ def generate_stage_summary(
 
     evidence_context = _build_evidence_context(session_id, stage, repository)
     confidence_score = _calculate_confidence_score(session_id, stage, repository)
-    
+
     pages = repository.get_pages_by_session_id(session_id)
     page_types = {
         "Awareness": ["homepage"],
         "Consideration": ["product"],
         "Conversion": ["cart", "checkout"],
     }
-    
+
     manual_review_reasons = []
     hard_flag_triggered = False
-    
+
     for page_type in page_types.get(stage, []):
-        page_ok = any(
-            p.get("page_type") == page_type and p.get("status") == "ok"
-            for p in pages
-        )
+        page_ok = any(p.get("page_type") == page_type and p.get("status") == "ok" for p in pages)
         if not page_ok:
             reason = f"{page_type} page failed to load"
             manual_review_reasons.append(reason)
             hard_flag_triggered = True
-    
+
     if stage == "Conversion":
         session_data = repository.get_session_by_id(session_id)
         functional_flow_score = session_data.get("functional_flow_score", 0)
         if functional_flow_score < 3:
             manual_review_reasons.append("Checkout inaccessible")
             hard_flag_triggered = True
-    
+
     manual_review_flag = confidence_score < 7 or hard_flag_triggered
-    
+
     if confidence_score < 7 and not hard_flag_triggered:
         manual_review_reasons.append(f"Confidence score {confidence_score} is below threshold (7)")
 
@@ -369,7 +356,7 @@ def generate_stage_summary(
         logger.error("openai_api_key_missing_for_stage_summary", stage=stage)
         return {
             "stage": stage,
-            "summary": f"Summary generation unavailable for {stage} stage (OpenAI API key not configured).",
+            "summary": f"Summary unavailable for {stage} (OpenAI API key not configured).",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "model_version": model,
             "token_usage": {"input_tokens": 0, "output_tokens": 0},
@@ -401,7 +388,10 @@ def generate_stage_summary(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert e-commerce consultant providing strategic insights for website optimization and revenue recovery. Write concise, buyer-focused summaries.",
+                    "content": (
+                        "Expert e-commerce consultant. Strategic insights, "
+                        "optimization, revenue. Concise, buyer-focused."
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],
@@ -468,10 +458,10 @@ def generate_stage_summary(
 def calculate_stage_score(questions: list[dict]) -> float:
     """
     Calculate score percentage for a stage based on passed/failed questions.
-    
+
     Args:
         questions: List of question result dicts with 'result' field
-        
+
     Returns:
         Score as percentage (0-100)
     """
@@ -491,12 +481,12 @@ def generate_stage_summaries(
 ) -> list[dict]:
     """
     Generate AI summaries for all stages (Awareness/Consideration/Conversion).
-    
+
     Args:
         session_id: Session UUID
         repository: AuditRepository instance
         model: OpenAI model to use
-        
+
     Returns:
         List of summary dicts, one per stage
     """
@@ -579,9 +569,7 @@ def generate_stage_summaries(
 
     for stage in STAGES:
         stage_questions = questions_by_stage[stage]
-        summary = generate_stage_summary(
-            stage, stage_questions, url, session_id, repository, model
-        )
+        summary = generate_stage_summary(stage, stage_questions, url, session_id, repository, model)
 
         try:
             repository.save_stage_summary(

@@ -188,9 +188,9 @@ def test_compute_session_status_all_combinations():
             f"expected {exp_status}, got {status}"
         )
         if exp_summary_substr:
-            assert exp_summary_substr in (
-                summary or ""
-            ), f"Expected summary to contain '{exp_summary_substr}', got '{summary}'"
+            assert exp_summary_substr in (summary or ""), (
+                f"Expected summary to contain '{exp_summary_substr}', got '{summary}'"
+            )
         else:
             assert summary is None, f"Expected None summary for completed, got '{summary}'"
 

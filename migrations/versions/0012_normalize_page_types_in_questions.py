@@ -18,19 +18,19 @@ def upgrade() -> None:
         SET page_type = 'cart'
         WHERE page_type IN ('cart page', 'CART PAGE', 'Cart Page', 'CART', 'Cart');
     """)
-    
+
     op.execute("""
         UPDATE audit_questions
         SET page_type = 'product'
         WHERE page_type IN ('product page', 'PRODUCT PAGE', 'Product Page', 'pdp', 'PDP', 'PRODUCT', 'product');
     """)
-    
+
     op.execute("""
         UPDATE audit_questions
         SET page_type = 'checkout'
         WHERE page_type IN ('checkout page', 'CHECKOUT PAGE', 'Checkout Page', 'CHECKOUT');
     """)
-    
+
     op.execute("""
         UPDATE audit_questions
         SET page_type = 'homepage'

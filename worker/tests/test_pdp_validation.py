@@ -423,9 +423,9 @@ def test_evaluate_pdp_validation_signals_all_combinations():
                         has_title_and_image=title_img,
                     )
                     expected = _expected_valid(price, cart, schema, title_img)
-                    assert (
-                        valid == expected
-                    ), f"price={price} cart={cart} schema={schema} title_img={title_img}"
+                    assert valid == expected, (
+                        f"price={price} cart={cart} schema={schema} title_img={title_img}"
+                    )
                     assert base_met == (price and title_img)
                     assert strong_met == (cart or schema)
 

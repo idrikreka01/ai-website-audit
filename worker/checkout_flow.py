@@ -171,7 +171,13 @@ async def run_checkout_flow(
                         await dismiss_popups(page)
 
                         await _capture_page_payloads(
-                            page, "checkout", session_id, viewport, domain, repository, checkout_load_timings
+                            page,
+                            "checkout",
+                            session_id,
+                            viewport,
+                            domain,
+                            repository,
+                            checkout_load_timings,
                         )
         else:
             result["errors"].append("Add-to-cart button not found in analysis JSON")

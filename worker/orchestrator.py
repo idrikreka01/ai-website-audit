@@ -23,24 +23,26 @@ from worker.session_status import compute_session_status, session_low_confidence
 logger = get_logger(__name__)
 
 
-def compute_ai_audit_score(session_uuid: UUID, domain: str, repository: AuditRepository) -> Optional[dict]:
+def compute_ai_audit_score(
+    session_uuid: UUID, domain: str, repository: AuditRepository
+) -> Optional[dict]:
     """
     Compute AI audit score (0.0-1.0) and flag ('high', 'medium', 'low') from audit_results.
-    
+
     Args:
         session_uuid: Session UUID
         domain: Domain name
         repository: Audit repository
-        
+
     Returns:
-        Dict with 'score' (float 0.0-1.0) and 'flag' (str: 'high', 'medium', 'low'), or None if no results
+        Dict with score (0-1), flag ('high'/'medium'/'low'), or None if no results
     """
     normalized_domain = (domain or "").strip().lower()
     if normalized_domain.startswith("www."):
         normalized_domain = normalized_domain[4:]
     normalized_domain = normalized_domain or "unknown-domain"
     session_id_str = f"{normalized_domain}__{session_uuid}"
-    
+
     audit_results = repository.get_audit_results_by_session_id(session_id_str)
     if not audit_results:
         logger.info(
@@ -49,7 +51,7 @@ def compute_ai_audit_score(session_uuid: UUID, domain: str, repository: AuditRep
             session_id=str(session_uuid),
         )
         return None
-    
+
     total_weight = 0.0
     weighted_pass = 0.0
     unknown_count = 0
@@ -97,7 +99,7 @@ def compute_ai_audit_score(session_uuid: UUID, domain: str, repository: AuditRep
         weighted_pass=weighted_pass,
         total_weight=total_weight,
     )
-    
+
     return {
         "score": round(score, 4),
         "flag": flag,
@@ -107,12 +109,12 @@ def compute_ai_audit_score(session_uuid: UUID, domain: str, repository: AuditRep
 def compute_functional_flow_score(checkout_result: dict) -> int:
     """
     Compute functional flow score (0-3) from checkout result.
-    
+
     Args:
-        checkout_result: Dict from run_checkout_flow() with add_to_cart, cart_navigation, checkout_navigation
-        
+        checkout_result: Dict from run_checkout_flow() (add_to_cart, cart_nav, checkout_nav)
+
     Returns:
-        Score 0-3: +1 for add_to_cart completed, +1 for cart_navigation completed, +1 for checkout_navigation completed
+        Score 0-3: +1 per completed step (add_to_cart, cart_navigation, checkout_navigation)
     """
     score = 0
     if checkout_result.get("add_to_cart", {}).get("status") == "completed":
@@ -127,7 +129,7 @@ def compute_functional_flow_score(checkout_result: dict) -> int:
 def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository) -> dict:
     """
     Compute overall audit performance percentage from all 3 flags.
-    
+
     Returns dict with:
     - overall_percentage: float (0-100)
     - flag1_percentage: float (Page Coverage, 0-100)
@@ -148,25 +150,25 @@ def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository)
             "flag3_percentage": 0.0,
             "needs_manual_review": True,
         }
-    
+
     flag1_score = session_data.get("page_coverage_score", 0)
     flag1_percentage = (flag1_score / 4.0) * 100.0
-    
+
     flag2_score = session_data.get("ai_audit_score")
     flag2_percentage = None
     if flag2_score is not None:
         flag2_percentage = flag2_score * 100.0
-    
+
     flag3_score = session_data.get("functional_flow_score", 0)
     flag3_percentage = (flag3_score / 3.0) * 100.0
-    
+
     percentages = [flag1_percentage, flag3_percentage]
     if flag2_percentage is not None:
         percentages.append(flag2_percentage)
-    
+
     overall_percentage = sum(percentages) / len(percentages)
     needs_manual_review = overall_percentage < 70.0
-    
+
     result = {
         "overall_percentage": round(overall_percentage, 2),
         "flag1_percentage": round(flag1_percentage, 2),
@@ -174,7 +176,7 @@ def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository)
         "flag3_percentage": round(flag3_percentage, 2),
         "needs_manual_review": needs_manual_review,
     }
-    
+
     logger.info(
         "overall_audit_score_computed",
         session_id=str(session_uuid),
@@ -184,11 +186,13 @@ def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository)
         flag3_percentage=result["flag3_percentage"],
         needs_manual_review=needs_manual_review,
     )
-    
+
     return result
 
 
-def send_manual_review_notification(session_uuid: UUID, score_data: dict, url: str, reason: Optional[str] = None) -> None:
+def send_manual_review_notification(
+    session_uuid: UUID, score_data: dict, url: str, reason: Optional[str] = None
+) -> None:
     """
     Send Telegram notification for manual review when score < 70% or page coverage < 4.
     """
@@ -199,30 +203,35 @@ def send_manual_review_notification(session_uuid: UUID, score_data: dict, url: s
             session_id=str(session_uuid),
         )
         return
-    
+
     reason_text = reason or "Overall score < 70%"
+    flag2_pct = (
+        f"{score_data['flag2_percentage']}%"
+        if score_data.get("flag2_percentage") is not None
+        else "(not available)"
+    )
     message = f"""🚨 <b>Manual Review Required</b>
 
 Session: <code>{session_uuid}</code>
 URL: {url}
 
-<b>Overall Score: {score_data['overall_percentage']}%</b>
+<b>Overall Score: {score_data["overall_percentage"]}%</b>
 
 Flag Breakdown:
-• Page Coverage: {score_data['flag1_percentage']}%
-• AI Audit: {score_data['flag2_percentage']}%{' (not available)' if score_data['flag2_percentage'] is None else ''}
-• Functional Flow: {score_data['flag3_percentage']}%
+• Page Coverage: {score_data["flag1_percentage"]}%
+• AI Audit: {flag2_pct}
+• Functional Flow: {score_data["flag3_percentage"]}%
 
 Status: Needs manual review
 Reason: {reason_text}"""
-    
+
     success = send_telegram_message(
         bot_token=config.telegram_bot_token,
         chat_id=config.telegram_chat_id,
         message=message,
         parse_mode="HTML",
     )
-    
+
     if success:
         logger.info(
             "manual_review_notification_sent",
@@ -239,32 +248,40 @@ Reason: {reason_text}"""
 def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditRepository) -> None:
     """
     Compute page coverage flags by checking audit_pages table for both desktop and mobile.
-    
+
     Args:
         session_uuid: Session UUID
         repository: Audit repository
     """
     pages = repository.get_pages_by_session_id(session_uuid)
-    
+
     page_type_viewports = {}
     for page in pages:
         page_type = page["page_type"]
         viewport = page["viewport"]
         status = page["status"]
-        
+
         if page_type not in page_type_viewports:
             page_type_viewports[page_type] = {"desktop": False, "mobile": False}
-        
+
         if status == "ok":
             page_type_viewports[page_type][viewport] = True
-    
-    homepage_ok = page_type_viewports.get("homepage", {}).get("desktop", False) and page_type_viewports.get("homepage", {}).get("mobile", False)
-    pdp_ok = page_type_viewports.get("pdp", {}).get("desktop", False) and page_type_viewports.get("pdp", {}).get("mobile", False)
-    cart_ok = page_type_viewports.get("cart", {}).get("desktop", False) and page_type_viewports.get("cart", {}).get("mobile", False)
-    checkout_ok = page_type_viewports.get("checkout", {}).get("desktop", False) and page_type_viewports.get("checkout", {}).get("mobile", False)
-    
+
+    homepage_ok = page_type_viewports.get("homepage", {}).get(
+        "desktop", False
+    ) and page_type_viewports.get("homepage", {}).get("mobile", False)
+    pdp_ok = page_type_viewports.get("pdp", {}).get("desktop", False) and page_type_viewports.get(
+        "pdp", {}
+    ).get("mobile", False)
+    cart_ok = page_type_viewports.get("cart", {}).get("desktop", False) and page_type_viewports.get(
+        "cart", {}
+    ).get("mobile", False)
+    checkout_ok = page_type_viewports.get("checkout", {}).get(
+        "desktop", False
+    ) and page_type_viewports.get("checkout", {}).get("mobile", False)
+
     page_coverage_score = sum([homepage_ok, pdp_ok, cart_ok, checkout_ok])
-    
+
     repository.update_session_page_coverage(
         session_id=session_uuid,
         homepage_ok=homepage_ok,
@@ -273,7 +290,7 @@ def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditReposi
         checkout_ok=checkout_ok,
         page_coverage_score=page_coverage_score,
     )
-    
+
     logger.info(
         "page_coverage_computed",
         session_id=str(session_uuid),
@@ -285,45 +302,47 @@ def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditReposi
     )
 
 
-def _discover_page_types_from_artifacts(session_id_str: str, artifacts_dir: str = "./artifacts") -> list[str]:
+def _discover_page_types_from_artifacts(
+    session_id_str: str, artifacts_dir: str = "./artifacts"
+) -> list[str]:
     """
     Discover available page types by checking artifact directories.
-    
+
     Args:
         session_id_str: Session identifier (format: domain__uuid)
         artifacts_dir: Base artifacts directory
-        
+
     Returns:
         List of page types that have both desktop and mobile artifacts
     """
     from pathlib import Path
-    
+
     artifacts_path = Path(artifacts_dir) / session_id_str
     if not artifacts_path.exists():
         return []
-    
+
     available_page_types = []
     valid_page_types = ["homepage", "pdp", "cart", "checkout"]
-    
+
     for page_type in valid_page_types:
         page_type_path = artifacts_path / page_type
         if not page_type_path.exists() or not page_type_path.is_dir():
             continue
-        
+
         desktop_path = page_type_path / "desktop"
         mobile_path = page_type_path / "mobile"
-        
+
         desktop_visible_text = (desktop_path / "visible_text.txt").exists()
         desktop_features = (desktop_path / "features_json.json").exists()
         desktop_has_artifacts = desktop_path.exists() and (desktop_visible_text or desktop_features)
-        
+
         mobile_visible_text = (mobile_path / "visible_text.txt").exists()
         mobile_features = (mobile_path / "features_json.json").exists()
         mobile_has_artifacts = mobile_path.exists() and (mobile_visible_text or mobile_features)
-        
+
         if desktop_has_artifacts and mobile_has_artifacts:
             available_page_types.append(page_type)
-    
+
     return available_page_types
 
 
@@ -335,22 +354,22 @@ def _run_audit_evaluation_for_page_types(
 ) -> None:
     """
     Run audit evaluation for page types. If page_types is None, auto-discover from artifacts.
-    
+
     Args:
         session_uuid: Session UUID
         domain: Domain name
         repository: Audit repository
         page_types: Optional list of page types to evaluate. If None, discovers from artifacts.
     """
-    from get_questions_by_page_type import get_questions_by_page_type
     from audit_evaluator import AuditEvaluator
-    
+    from get_questions_by_page_type import get_questions_by_page_type
+
     normalized_domain = (domain or "").strip().lower()
     if normalized_domain.startswith("www."):
         normalized_domain = normalized_domain[4:]
     normalized_domain = normalized_domain or "unknown-domain"
     session_id_str = f"{normalized_domain}__{session_uuid}"
-    
+
     if page_types is None:
         page_types = _discover_page_types_from_artifacts(session_id_str)
         logger.info(
@@ -358,7 +377,7 @@ def _run_audit_evaluation_for_page_types(
             page_types=page_types,
             session_id=str(session_uuid),
         )
-    
+
     if not page_types:
         logger.info(
             "audit_evaluation_skipped",
@@ -366,25 +385,26 @@ def _run_audit_evaluation_for_page_types(
             session_id=str(session_uuid),
         )
         return
-    
+
     for page_type in page_types:
         from pathlib import Path
+
         from shared.config import get_config
-        
+
         config = get_config()
         artifacts_path = Path(config.artifacts_dir) / session_id_str / page_type
-        
+
         desktop_path = artifacts_path / "desktop"
         mobile_path = artifacts_path / "mobile"
-        
+
         desktop_visible_text = (desktop_path / "visible_text.txt").exists()
         desktop_features = (desktop_path / "features_json.json").exists()
         desktop_has_artifacts = desktop_path.exists() and (desktop_visible_text or desktop_features)
-        
+
         mobile_visible_text = (mobile_path / "visible_text.txt").exists()
         mobile_features = (mobile_path / "features_json.json").exists()
         mobile_has_artifacts = mobile_path.exists() and (mobile_visible_text or mobile_features)
-        
+
         if not (desktop_has_artifacts and mobile_has_artifacts):
             logger.info(
                 "audit_evaluation_skipped",
@@ -395,14 +415,14 @@ def _run_audit_evaluation_for_page_types(
                 session_id=str(session_uuid),
             )
             continue
-        
+
         try:
             logger.info(
                 "audit_evaluation_starting",
                 page_type=page_type,
                 session_id=str(session_uuid),
             )
-            
+
             normalized_page_type = "product" if page_type == "pdp" else page_type
             questions = get_questions_by_page_type(normalized_page_type)
             if not questions.get("question"):
@@ -413,7 +433,7 @@ def _run_audit_evaluation_for_page_types(
                     session_id=str(session_uuid),
                 )
                 continue
-            
+
             evaluator = AuditEvaluator(artifacts_dir="./artifacts")
             results = evaluator.run_audit(
                 session_id=session_id_str,
@@ -424,14 +444,14 @@ def _run_audit_evaluation_for_page_types(
                 include_screenshots=False,
                 repository=repository,
             )
-            
+
             logger.info(
                 "audit_evaluation_completed",
                 page_type=page_type,
                 results_count=len(results),
                 session_id=str(session_uuid),
             )
-            
+
             repository.create_log(
                 session_id=session_uuid,
                 level="info",
@@ -440,12 +460,18 @@ def _run_audit_evaluation_for_page_types(
                 details={
                     "page_type": page_type,
                     "results_count": len(results),
-                    "pass_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "pass"),
-                    "fail_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "fail"),
-                    "unknown_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "unknown"),
+                    "pass_count": sum(
+                        1 for r in results.values() if (r.get("result") or "").lower() == "pass"
+                    ),
+                    "fail_count": sum(
+                        1 for r in results.values() if (r.get("result") or "").lower() == "fail"
+                    ),
+                    "unknown_count": sum(
+                        1 for r in results.values() if (r.get("result") or "").lower() == "unknown"
+                    ),
                 },
             )
-            
+
         except Exception as e:
             logger.error(
                 "audit_evaluation_failed",
@@ -606,7 +632,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         results_pdp = asyncio.run(
             crawl_pdp_async(pdp_url, session_uuid, repository, mode, first_time)
         )
-        
+
         for viewport in ["desktop", "mobile"]:
             viewport_data = results_pdp.get(viewport, {})
             logger.info(
@@ -622,10 +648,12 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                     "checkout_result_found",
                     session_id=str(session_uuid),
                     viewport=viewport,
-                    checkout_result_keys=list(checkout_result.keys()) if isinstance(checkout_result, dict) else None,
+                    checkout_result_keys=(
+                        list(checkout_result.keys()) if isinstance(checkout_result, dict) else None
+                    ),
                 )
                 break
-        
+
         if checkout_result:
             try:
                 score = compute_functional_flow_score(checkout_result)
@@ -646,7 +674,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                     error_type=type(e).__name__,
                     session_id=str(session_uuid),
                 )
-        
+
         try:
             _compute_and_store_page_coverage(session_uuid, repository)
         except Exception as e:
@@ -716,19 +744,23 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         )
 
     session_data_after_coverage = repository.get_session_by_id(session_uuid)
-    page_coverage_score = session_data_after_coverage.get("page_coverage_score", 0) if session_data_after_coverage else 0
-    
+    page_coverage_score = (
+        session_data_after_coverage.get("page_coverage_score", 0)
+        if session_data_after_coverage
+        else 0
+    )
+
     if page_coverage_score < 4:
         logger.warning(
             "audit_process_stopped_low_page_coverage",
             session_id=str(session_uuid),
             page_coverage_score=page_coverage_score,
-            reason="Page coverage < 4, insufficient data for reliable audit. Stopping audit evaluation and score computation.",
+            reason="Page coverage < 4, stopping audit evaluation and score computation.",
         )
         repository.update_session_status(
             session_uuid,
             "partial",
-            error_summary=f"Page coverage score {page_coverage_score}/4 is below threshold. Insufficient data for reliable audit.",
+            error_summary=f"Page coverage {page_coverage_score}/4 below threshold.",
         )
         try:
             repository.update_session_overall_score(
@@ -754,7 +786,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 "reason": "Insufficient data for reliable audit evaluation",
             },
         )
-        
+
         try:
             score_data_for_notification = {
                 "overall_percentage": 0.0,
@@ -767,7 +799,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 session_uuid,
                 score_data_for_notification,
                 url,
-                reason=f"Page coverage {page_coverage_score}/4 is below threshold (4). Audit process stopped.",
+                reason=f"Page coverage {page_coverage_score}/4 below threshold. Audit stopped.",
             )
         except Exception as e:
             logger.error(
@@ -776,7 +808,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 error_type=type(e).__name__,
                 session_id=str(session_uuid),
             )
-        
+
         return
 
     _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)
@@ -811,15 +843,17 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
 
     try:
         score_data = compute_overall_audit_score(session_uuid, repository)
-        
+
         repository.update_session_overall_score(
             session_id=session_uuid,
             overall_score_percentage=score_data["overall_percentage"],
             needs_manual_review=score_data["needs_manual_review"],
         )
-        
+
         if score_data["needs_manual_review"]:
-            send_manual_review_notification(session_uuid, score_data, url, reason="Overall score < 70%")
+            send_manual_review_notification(
+                session_uuid, score_data, url, reason="Overall score < 70%"
+            )
             logger.info(
                 "manual_review_triggered",
                 session_id=str(session_uuid),

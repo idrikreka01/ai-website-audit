@@ -28,7 +28,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "audit_sessions",
-        sa.Column("needs_manual_review", sa.Boolean(), server_default=sa.text("false"), nullable=False),
+        sa.Column(
+            "needs_manual_review", sa.Boolean(), server_default=sa.text("false"), nullable=False
+        ),
     )
     op.create_check_constraint(
         "ck_audit_sessions_ai_audit_score",
@@ -48,7 +50,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint("ck_audit_sessions_overall_score_percentage", "audit_sessions", type_="check")
+    op.drop_constraint(
+        "ck_audit_sessions_overall_score_percentage", "audit_sessions", type_="check"
+    )
     op.drop_constraint("ck_audit_sessions_ai_audit_flag", "audit_sessions", type_="check")
     op.drop_constraint("ck_audit_sessions_ai_audit_score", "audit_sessions", type_="check")
     op.drop_column("audit_sessions", "needs_manual_review")

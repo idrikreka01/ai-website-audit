@@ -21,7 +21,9 @@ def upgrade() -> None:
         sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("stage", sa.Text(), nullable=False),
         sa.Column("summary", sa.Text(), nullable=False),
-        sa.Column("generated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "generated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("model_version", sa.Text(), nullable=False),
         sa.Column("token_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("cost_usd", sa.Float(), nullable=False),
@@ -36,7 +38,7 @@ def upgrade() -> None:
             name="ck_audit_stage_summaries_stage",
         ),
     )
-    
+
     op.create_index(
         "ix_audit_stage_summaries_session_id",
         "audit_stage_summaries",

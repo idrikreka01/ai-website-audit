@@ -6,7 +6,6 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 revision: str = "0010_replace_questions_schema"
 down_revision: Union[str, None] = "0007_add_html_analysis_json"
@@ -17,19 +16,21 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Drop existing audit_question_results table first (if exists, due to FK)
     op.execute("DROP TABLE IF EXISTS audit_question_results CASCADE")
-    
+
     # Drop existing audit_questions table (this will cascade delete question_results)
     op.execute("DROP TABLE IF EXISTS audit_questions CASCADE")
-    
+
     # Drop indexes if they exist
     op.execute("DROP INDEX IF EXISTS ix_audit_questions_stage_page_type_category")
     op.execute("DROP INDEX IF EXISTS ix_audit_question_results_audit_id")
     op.execute("DROP INDEX IF EXISTS ix_audit_question_results_question_id")
-    
+
     # Create new audit_questions table
     op.create_table(
         "audit_questions",
-        sa.Column("question_id", sa.Integer(), primary_key=True, autoincrement=True, nullable=False),
+        sa.Column(
+            "question_id", sa.Integer(), primary_key=True, autoincrement=True, nullable=False
+        ),
         sa.Column("category", sa.Text(), nullable=False),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("ai_criteria", sa.Text(), nullable=False),
@@ -51,7 +52,7 @@ def upgrade() -> None:
             name="ck_audit_questions_page_type",
         ),
     )
-    
+
     # Create audit_results table
     op.create_table(
         "audit_results",
@@ -71,7 +72,7 @@ def upgrade() -> None:
             name="ck_audit_results_result",
         ),
     )
-    
+
     # Create indexes
     op.create_index(
         "ix_audit_results_question_id",
@@ -90,9 +91,9 @@ def downgrade() -> None:
     op.drop_index("ix_audit_results_session_id", table_name="audit_results")
     op.drop_index("ix_audit_results_question_id", table_name="audit_results")
     op.drop_table("audit_results")
-    
+
     # Drop audit_questions
     op.drop_table("audit_questions")
-    
+
     # Note: We don't recreate the old tables here as this is a schema replacement
     # If you need the old schema back, restore from a backup or create a new migration

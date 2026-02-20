@@ -21,7 +21,9 @@ def upgrade() -> None:
         sa.Column("session_id", postgresql.UUID(as_uuid=True), nullable=False, unique=True),
         sa.Column("stage_descriptions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("final_thoughts", sa.Text(), nullable=False),
-        sa.Column("generated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "generated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("model_version", sa.Text(), nullable=False),
         sa.Column("token_usage", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("cost_usd", sa.Float(), nullable=False),
@@ -32,7 +34,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
     )
-    
+
     op.create_index(
         "ix_audit_storefront_report_cards_session_id",
         "audit_storefront_report_cards",
@@ -42,5 +44,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_audit_storefront_report_cards_session_id", table_name="audit_storefront_report_cards")
+    op.drop_index(
+        "ix_audit_storefront_report_cards_session_id", table_name="audit_storefront_report_cards"
+    )
     op.drop_table("audit_storefront_report_cards")
