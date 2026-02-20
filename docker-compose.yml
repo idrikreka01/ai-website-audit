@@ -36,6 +36,9 @@ services:
       STORAGE_ROOT: /app/storage
       ARTIFACTS_DIR: /app/artifacts
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_PRICE_INPUT_PER_1M: ${OPENAI_PRICE_INPUT_PER_1M:-2.50}
+      OPENAI_PRICE_OUTPUT_PER_1M: ${OPENAI_PRICE_OUTPUT_PER_1M:-10.00}
     volumes:
       - ./storage:/app/storage
       - ./artifacts:/app/artifacts

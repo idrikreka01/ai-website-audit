@@ -23,6 +23,8 @@ from shared.db import (
     get_audit_questions_table,
     get_audit_results_table,
     get_audit_sessions_table,
+    get_audit_stage_summaries_table,
+    get_audit_storefront_report_cards_table,
     get_crawl_logs_table,
 )
 
@@ -39,6 +41,8 @@ class AuditRepository:
         self.questions_table = get_audit_questions_table()
         self.question_results_table = get_audit_question_results_table()
         self.results_table = get_audit_results_table()
+        self.stage_summaries_table = get_audit_stage_summaries_table()
+        self.storefront_report_cards_table = get_audit_storefront_report_cards_table()
 
     def create_session(
         self,
@@ -521,6 +525,46 @@ class AuditRepository:
                 page_coverage_score=verify_row.page_coverage_score,
             )
 
+    def update_session_ai_audit_flag(
+        self,
+        session_id: UUID,
+        ai_audit_score: Optional[float],
+        ai_audit_flag: Optional[str],
+    ) -> None:
+        """
+        Update AI audit score and flag on audit session.
+        
+        Args:
+            session_id: The session ID to update
+            ai_audit_score: Score 0.0-1.0 (pass ratio weighted by confidence)
+            ai_audit_flag: 'high', 'medium', or 'low'
+        """
+        from shared.logging import get_logger
+        
+        logger = get_logger(__name__)
+        logger.info(
+            "updating_session_ai_audit_flag",
+            session_id=str(session_id),
+            ai_audit_score=ai_audit_score,
+            ai_audit_flag=ai_audit_flag,
+        )
+        
+        update_stmt = (
+            self.sessions_table.update()
+            .where(self.sessions_table.c.id == session_id)
+            .values(
+                ai_audit_score=ai_audit_score,
+                ai_audit_flag=ai_audit_flag,
+            )
+        )
+        result = self.session.execute(update_stmt)
+        logger.info(
+            "update_session_ai_audit_flag_executed",
+            session_id=str(session_id),
+            rows_affected=result.rowcount,
+        )
+        self.session.flush()
+
     def update_session_functional_flow(
         self,
         session_id: UUID,
@@ -555,6 +599,46 @@ class AuditRepository:
         result = self.session.execute(update_stmt)
         logger.info(
             "update_session_functional_flow_executed",
+            session_id=str(session_id),
+            rows_affected=result.rowcount,
+        )
+        self.session.flush()
+
+    def update_session_overall_score(
+        self,
+        session_id: UUID,
+        overall_score_percentage: float,
+        needs_manual_review: bool,
+    ) -> None:
+        """
+        Update overall score percentage and needs_manual_review flag on audit session.
+        
+        Args:
+            session_id: The session ID to update
+            overall_score_percentage: Overall score 0-100
+            needs_manual_review: True if score < 70%
+        """
+        from shared.logging import get_logger
+        
+        logger = get_logger(__name__)
+        logger.info(
+            "updating_session_overall_score",
+            session_id=str(session_id),
+            overall_score_percentage=overall_score_percentage,
+            needs_manual_review=needs_manual_review,
+        )
+        
+        update_stmt = (
+            self.sessions_table.update()
+            .where(self.sessions_table.c.id == session_id)
+            .values(
+                overall_score_percentage=overall_score_percentage,
+                needs_manual_review=needs_manual_review,
+            )
+        )
+        result = self.session.execute(update_stmt)
+        logger.info(
+            "update_session_overall_score_executed",
             session_id=str(session_id),
             rows_affected=result.rowcount,
         )
@@ -640,7 +724,6 @@ class AuditRepository:
     def list_questions(
         self,
         *,
-        stage: Optional[str] = None,
         page_type: Optional[str] = None,
         category: Optional[str] = None,
     ) -> list[dict]:
@@ -651,8 +734,6 @@ class AuditRepository:
         """
         stmt = select(self.questions_table)
         conditions = []
-        if stage is not None:
-            conditions.append(self.questions_table.c.stage == stage)
         if page_type is not None:
             conditions.append(self.questions_table.c.page_type == page_type)
         if category is not None:
@@ -660,8 +741,8 @@ class AuditRepository:
 
         if conditions:
             stmt = stmt.where(and_(*conditions))
-
-        stmt = stmt.order_by(self.questions_table.c.created_at.desc())
+        
+        stmt = stmt.order_by(self.questions_table.c.question_id)
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
 
@@ -802,7 +883,7 @@ class AuditRepository:
         Args:
             question_id: Question ID (integer)
             session_id: Session ID (string format: domain__uuid)
-            result: Result value ("PASS" or "FAIL" - will be converted to lowercase)
+            result: Result value ("pass", "fail", or "unknown" - will be converted to lowercase)
             reason: Optional reason text
             confidence_score: Confidence score (1-10, defaults to 5)
             
@@ -810,7 +891,7 @@ class AuditRepository:
             Created result as a dict
         """
         result_lower = result.lower() if result else "fail"
-        if result_lower not in ["pass", "fail"]:
+        if result_lower not in ["pass", "fail", "unknown"]:
             result_lower = "fail"
         
         confidence_score = max(1, min(10, confidence_score))
@@ -848,3 +929,238 @@ class AuditRepository:
         ).order_by(self.results_table.c.result_id)
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
+    
+    def get_audit_results_by_question_id(self, question_id: int) -> list[dict]:
+        """
+        Get all audit results for a specific question.
+        
+        Args:
+            question_id: Question ID (integer)
+            
+        Returns:
+            List of result dicts
+        """
+        stmt = select(self.results_table).where(
+            self.results_table.c.question_id == question_id
+        ).order_by(self.results_table.c.result_id)
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+    
+    def get_audit_result_by_id(self, result_id: int) -> Optional[dict]:
+        """
+        Get a single audit result by ID.
+        
+        Args:
+            result_id: Result ID (integer)
+            
+        Returns:
+            Result dict, or None if not found
+        """
+        stmt = select(self.results_table).where(
+            self.results_table.c.result_id == result_id
+        )
+        result = self.session.execute(stmt).first()
+        if result is None:
+            return None
+        return dict(result._mapping)
+    
+    def save_stage_summary(
+        self,
+        *,
+        session_id: UUID,
+        stage: str,
+        summary: str,
+        model_version: str,
+        token_usage: dict,
+        cost_usd: float,
+    ) -> Optional[dict]:
+        """
+        Save or update a stage summary for a session.
+        
+        Args:
+            session_id: Session UUID
+            stage: Stage name (Awareness/Consideration/Conversion)
+            summary: Summary text
+            model_version: Model version used
+            token_usage: Dict with input_tokens and output_tokens
+            cost_usd: Cost in USD
+            
+        Returns:
+            Saved summary dict, or None if table doesn't exist
+        """
+        if self.stage_summaries_table is None:
+            return None
+        
+        summary_id = uuid4()
+        generated_at = datetime.now(timezone.utc)
+        
+        existing_stmt = select(self.stage_summaries_table).where(
+            and_(
+                self.stage_summaries_table.c.session_id == session_id,
+                self.stage_summaries_table.c.stage == stage,
+            )
+        )
+        existing = self.session.execute(existing_stmt).first()
+        
+        if existing:
+            update_stmt = (
+                self.stage_summaries_table.update()
+                .where(
+                    and_(
+                        self.stage_summaries_table.c.session_id == session_id,
+                        self.stage_summaries_table.c.stage == stage,
+                    )
+                )
+                .values(
+                    summary=summary,
+                    generated_at=generated_at,
+                    model_version=model_version,
+                    token_usage=token_usage,
+                    cost_usd=cost_usd,
+                )
+            )
+            self.session.execute(update_stmt)
+            self.session.flush()
+            
+            updated_stmt = select(self.stage_summaries_table).where(
+                and_(
+                    self.stage_summaries_table.c.session_id == session_id,
+                    self.stage_summaries_table.c.stage == stage,
+                )
+            )
+            result = self.session.execute(updated_stmt).first()
+            return dict(result._mapping) if result else None
+        else:
+            insert_stmt = self.stage_summaries_table.insert().values(
+                id=summary_id,
+                session_id=session_id,
+                stage=stage,
+                summary=summary,
+                generated_at=generated_at,
+                model_version=model_version,
+                token_usage=token_usage,
+                cost_usd=cost_usd,
+            )
+            self.session.execute(insert_stmt)
+            self.session.flush()
+            
+            select_stmt = select(self.stage_summaries_table).where(
+                self.stage_summaries_table.c.id == summary_id
+            )
+            result = self.session.execute(select_stmt).first()
+            return dict(result._mapping) if result else None
+    
+    def get_stage_summaries_by_session(self, session_id: UUID) -> list[dict]:
+        """
+        Get all stage summaries for a session.
+        
+        Args:
+            session_id: Session UUID
+            
+        Returns:
+            List of summary dicts
+        """
+        if self.stage_summaries_table is None:
+            return []
+        
+        stmt = select(self.stage_summaries_table).where(
+            self.stage_summaries_table.c.session_id == session_id
+        ).order_by(self.stage_summaries_table.c.stage)
+        
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+    
+    def save_storefront_report_card(
+        self,
+        *,
+        session_id: UUID,
+        stage_descriptions: dict,
+        final_thoughts: str,
+        model_version: str,
+        token_usage: dict,
+        cost_usd: float,
+    ) -> Optional[dict]:
+        """
+        Save or update a storefront report card for a session.
+        
+        Args:
+            session_id: Session UUID
+            stage_descriptions: Dict with stage descriptions {awareness: str, consideration: str, conversion: str}
+            final_thoughts: Final thoughts text
+            model_version: Model version used
+            token_usage: Dict with input_tokens and output_tokens
+            cost_usd: Cost in USD
+            
+        Returns:
+            Saved report card dict, or None if table doesn't exist
+        """
+        if self.storefront_report_cards_table is None:
+            return None
+        
+        report_card_id = uuid4()
+        generated_at = datetime.now(timezone.utc)
+        
+        existing_stmt = select(self.storefront_report_cards_table).where(
+            self.storefront_report_cards_table.c.session_id == session_id
+        )
+        existing = self.session.execute(existing_stmt).first()
+        
+        if existing:
+            update_stmt = (
+                self.storefront_report_cards_table.update()
+                .where(self.storefront_report_cards_table.c.session_id == session_id)
+                .values(
+                    stage_descriptions=stage_descriptions,
+                    final_thoughts=final_thoughts,
+                    generated_at=generated_at,
+                    model_version=model_version,
+                    token_usage=token_usage,
+                    cost_usd=cost_usd,
+                )
+            )
+            self.session.execute(update_stmt)
+            self.session.flush()
+            
+            updated_stmt = select(self.storefront_report_cards_table).where(
+                self.storefront_report_cards_table.c.session_id == session_id
+            )
+            result = self.session.execute(updated_stmt).first()
+            return dict(result._mapping) if result else None
+        else:
+            insert_stmt = self.storefront_report_cards_table.insert().values(
+                id=report_card_id,
+                session_id=session_id,
+                stage_descriptions=stage_descriptions,
+                final_thoughts=final_thoughts,
+                generated_at=generated_at,
+                model_version=model_version,
+                token_usage=token_usage,
+                cost_usd=cost_usd,
+            )
+            self.session.execute(insert_stmt)
+            self.session.flush()
+            
+            select_stmt = select(self.storefront_report_cards_table).where(
+                self.storefront_report_cards_table.c.id == report_card_id
+            )
+            result = self.session.execute(select_stmt).first()
+            return dict(result._mapping) if result else None
+    
+    def get_storefront_report_card_by_session(self, session_id: UUID) -> Optional[dict]:
+        """
+        Get storefront report card for a session.
+        
+        Args:
+            session_id: Session UUID
+            
+        Returns:
+            Report card dict, or None if not found or table doesn't exist
+        """
+        if self.storefront_report_cards_table is None:
+            return None
+        
+        stmt = select(self.storefront_report_cards_table).where(
+            self.storefront_report_cards_table.c.session_id == session_id
+        )
+        result = self.session.execute(stmt).first()
+        return dict(result._mapping) if result else None

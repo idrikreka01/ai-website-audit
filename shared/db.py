@@ -124,3 +124,15 @@ def get_audit_results_table() -> Table:
     """Get the audit_results table."""
     metadata = get_table_metadata()
     return metadata.tables["audit_results"]
+
+
+def get_audit_stage_summaries_table() -> Table:
+    """Get the audit_stage_summaries table."""
+    metadata = get_table_metadata()
+    return metadata.tables.get("audit_stage_summaries")
+
+
+def get_audit_storefront_report_cards_table() -> Table:
+    """Get the audit_storefront_report_cards table."""
+    metadata = get_table_metadata()
+    return metadata.tables.get("audit_storefront_report_cards")

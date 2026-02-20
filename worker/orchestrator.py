@@ -12,13 +12,96 @@ from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
+from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
+from shared.telegram import send_telegram_message
 from worker.crawl_runner import crawl_homepage_async, crawl_pdp_async
 from worker.pdp_discovery import ensure_pdp_page_records, run_pdp_discovery_and_validation
 from worker.repository import AuditRepository
 from worker.session_status import compute_session_status, session_low_confidence_from_pages
 
 logger = get_logger(__name__)
+
+
+def compute_ai_audit_score(session_uuid: UUID, domain: str, repository: AuditRepository) -> Optional[dict]:
+    """
+    Compute AI audit score (0.0-1.0) and flag ('high', 'medium', 'low') from audit_results.
+    
+    Args:
+        session_uuid: Session UUID
+        domain: Domain name
+        repository: Audit repository
+        
+    Returns:
+        Dict with 'score' (float 0.0-1.0) and 'flag' (str: 'high', 'medium', 'low'), or None if no results
+    """
+    normalized_domain = (domain or "").strip().lower()
+    if normalized_domain.startswith("www."):
+        normalized_domain = normalized_domain[4:]
+    normalized_domain = normalized_domain or "unknown-domain"
+    session_id_str = f"{normalized_domain}__{session_uuid}"
+    
+    audit_results = repository.get_audit_results_by_session_id(session_id_str)
+    if not audit_results:
+        logger.info(
+            "ai_audit_score_skipped",
+            reason="no_audit_results",
+            session_id=str(session_uuid),
+        )
+        return None
+    
+    total_weight = 0.0
+    weighted_pass = 0.0
+    unknown_count = 0
+
+    for result in audit_results:
+        result_value = (result.get("result") or "").lower()
+        if result_value == "unknown":
+            unknown_count += 1
+            continue
+        confidence = result.get("confidence_score", 0.5)
+        if confidence <= 0:
+            confidence = 0.5
+        passed = result_value == "pass"
+        total_weight += confidence
+        if passed:
+            weighted_pass += confidence
+
+    if total_weight == 0:
+        logger.warning(
+            "ai_audit_score_zero_weight",
+            session_id=str(session_uuid),
+        )
+        return None
+
+    score = weighted_pass / total_weight
+
+    if score >= 0.8:
+        flag = "high"
+    elif score >= 0.5:
+        flag = "medium"
+    else:
+        flag = "low"
+
+    pass_count = sum(1 for r in audit_results if (r.get("result") or "").lower() == "pass")
+    fail_count = sum(1 for r in audit_results if (r.get("result") or "").lower() == "fail")
+    logger.info(
+        "ai_audit_score_computed",
+        session_id=str(session_uuid),
+        score=score,
+        flag=flag,
+        total_results=len(audit_results),
+        pass_count=pass_count,
+        fail_count=fail_count,
+        unknown_count=unknown_count,
+        weighted_pass=weighted_pass,
+        total_weight=total_weight,
+    )
+    
+    return {
+        "score": round(score, 4),
+        "flag": flag,
+    }
 
 
 def compute_functional_flow_score(checkout_result: dict) -> int:
@@ -39,6 +122,118 @@ def compute_functional_flow_score(checkout_result: dict) -> int:
     if checkout_result.get("checkout_navigation", {}).get("status") == "completed":
         score += 1
     return score
+
+
+def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository) -> dict:
+    """
+    Compute overall audit performance percentage from all 3 flags.
+    
+    Returns dict with:
+    - overall_percentage: float (0-100)
+    - flag1_percentage: float (Page Coverage, 0-100)
+    - flag2_percentage: float (AI Audit, 0-100 or None if not available)
+    - flag3_percentage: float (Functional Flow, 0-100)
+    - needs_manual_review: bool (True if < 70%)
+    """
+    session_data = repository.get_session_by_id(session_uuid)
+    if not session_data:
+        logger.warning(
+            "session_not_found_for_scoring",
+            session_id=str(session_uuid),
+        )
+        return {
+            "overall_percentage": 0.0,
+            "flag1_percentage": 0.0,
+            "flag2_percentage": None,
+            "flag3_percentage": 0.0,
+            "needs_manual_review": True,
+        }
+    
+    flag1_score = session_data.get("page_coverage_score", 0)
+    flag1_percentage = (flag1_score / 4.0) * 100.0
+    
+    flag2_score = session_data.get("ai_audit_score")
+    flag2_percentage = None
+    if flag2_score is not None:
+        flag2_percentage = flag2_score * 100.0
+    
+    flag3_score = session_data.get("functional_flow_score", 0)
+    flag3_percentage = (flag3_score / 3.0) * 100.0
+    
+    percentages = [flag1_percentage, flag3_percentage]
+    if flag2_percentage is not None:
+        percentages.append(flag2_percentage)
+    
+    overall_percentage = sum(percentages) / len(percentages)
+    needs_manual_review = overall_percentage < 70.0
+    
+    result = {
+        "overall_percentage": round(overall_percentage, 2),
+        "flag1_percentage": round(flag1_percentage, 2),
+        "flag2_percentage": round(flag2_percentage, 2) if flag2_percentage is not None else None,
+        "flag3_percentage": round(flag3_percentage, 2),
+        "needs_manual_review": needs_manual_review,
+    }
+    
+    logger.info(
+        "overall_audit_score_computed",
+        session_id=str(session_uuid),
+        overall_percentage=result["overall_percentage"],
+        flag1_percentage=result["flag1_percentage"],
+        flag2_percentage=result["flag2_percentage"],
+        flag3_percentage=result["flag3_percentage"],
+        needs_manual_review=needs_manual_review,
+    )
+    
+    return result
+
+
+def send_manual_review_notification(session_uuid: UUID, score_data: dict, url: str, reason: Optional[str] = None) -> None:
+    """
+    Send Telegram notification for manual review when score < 70% or page coverage < 4.
+    """
+    config = get_config()
+    if not config.telegram_bot_token or not config.telegram_chat_id:
+        logger.warning(
+            "telegram_not_configured_for_manual_review",
+            session_id=str(session_uuid),
+        )
+        return
+    
+    reason_text = reason or "Overall score < 70%"
+    message = f"""🚨 <b>Manual Review Required</b>
+
+Session: <code>{session_uuid}</code>
+URL: {url}
+
+<b>Overall Score: {score_data['overall_percentage']}%</b>
+
+Flag Breakdown:
+• Page Coverage: {score_data['flag1_percentage']}%
+• AI Audit: {score_data['flag2_percentage']}%{' (not available)' if score_data['flag2_percentage'] is None else ''}
+• Functional Flow: {score_data['flag3_percentage']}%
+
+Status: Needs manual review
+Reason: {reason_text}"""
+    
+    success = send_telegram_message(
+        bot_token=config.telegram_bot_token,
+        chat_id=config.telegram_chat_id,
+        message=message,
+        parse_mode="HTML",
+    )
+    
+    if success:
+        logger.info(
+            "manual_review_notification_sent",
+            session_id=str(session_uuid),
+            overall_percentage=score_data["overall_percentage"],
+        )
+    else:
+        logger.warning(
+            "manual_review_notification_failed",
+            session_id=str(session_uuid),
+        )
 
 
 def _compute_and_store_page_coverage(session_uuid: UUID, repository: AuditRepository) -> None:
@@ -245,8 +440,9 @@ def _run_audit_evaluation_for_page_types(
                 details={
                     "page_type": page_type,
                     "results_count": len(results),
-                    "pass_count": sum(1 for r in results.values() if r.get("result") == "PASS"),
-                    "fail_count": sum(1 for r in results.values() if r.get("result") == "FAIL"),
+                    "pass_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "pass"),
+                    "fail_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "fail"),
+                    "unknown_count": sum(1 for r in results.values() if (r.get("result") or "").lower() == "unknown"),
                 },
             )
             
@@ -508,8 +704,6 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         },
     )
 
-    _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)
-
     try:
         _compute_and_store_page_coverage(session_uuid, repository)
     except Exception as e:
@@ -518,5 +712,129 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             error=str(e),
             error_type=type(e).__name__,
             session_id=str(session_uuid),
-            stage="final",
+            stage="before_audit_check",
+        )
+
+    session_data_after_coverage = repository.get_session_by_id(session_uuid)
+    page_coverage_score = session_data_after_coverage.get("page_coverage_score", 0) if session_data_after_coverage else 0
+    
+    if page_coverage_score < 4:
+        logger.warning(
+            "audit_process_stopped_low_page_coverage",
+            session_id=str(session_uuid),
+            page_coverage_score=page_coverage_score,
+            reason="Page coverage < 4, insufficient data for reliable audit. Stopping audit evaluation and score computation.",
+        )
+        repository.update_session_status(
+            session_uuid,
+            "partial",
+            error_summary=f"Page coverage score {page_coverage_score}/4 is below threshold. Insufficient data for reliable audit.",
+        )
+        try:
+            repository.update_session_overall_score(
+                session_id=session_uuid,
+                overall_score_percentage=0.0,
+                needs_manual_review=True,
+            )
+        except Exception as e:
+            logger.error(
+                "overall_score_update_failed_on_stop",
+                error=str(e),
+                error_type=type(e).__name__,
+                session_id=str(session_uuid),
+            )
+        repository.create_log(
+            session_id=session_uuid,
+            level="warn",
+            event_type="error",
+            message="Audit process stopped due to low page coverage",
+            details={
+                "page_coverage_score": page_coverage_score,
+                "threshold": 4,
+                "reason": "Insufficient data for reliable audit evaluation",
+            },
+        )
+        
+        try:
+            score_data_for_notification = {
+                "overall_percentage": 0.0,
+                "flag1_percentage": (page_coverage_score / 4.0) * 100.0,
+                "flag2_percentage": None,
+                "flag3_percentage": 0.0,
+                "needs_manual_review": True,
+            }
+            send_manual_review_notification(
+                session_uuid,
+                score_data_for_notification,
+                url,
+                reason=f"Page coverage {page_coverage_score}/4 is below threshold (4). Audit process stopped.",
+            )
+        except Exception as e:
+            logger.error(
+                "manual_review_notification_failed_on_page_coverage_stop",
+                error=str(e),
+                error_type=type(e).__name__,
+                session_id=str(session_uuid),
+            )
+        
+        return
+
+    _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)
+
+    try:
+        ai_audit_data = compute_ai_audit_score(session_uuid, domain, repository)
+        if ai_audit_data:
+            repository.update_session_ai_audit_flag(
+                session_id=session_uuid,
+                ai_audit_score=ai_audit_data["score"],
+                ai_audit_flag=ai_audit_data["flag"],
+            )
+            logger.info(
+                "ai_audit_flag_stored",
+                session_id=str(session_uuid),
+                score=ai_audit_data["score"],
+                flag=ai_audit_data["flag"],
+            )
+        else:
+            logger.info(
+                "ai_audit_flag_skipped",
+                reason="no_audit_results",
+                session_id=str(session_uuid),
+            )
+    except Exception as e:
+        logger.error(
+            "ai_audit_score_computation_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            session_id=str(session_uuid),
+        )
+
+    try:
+        score_data = compute_overall_audit_score(session_uuid, repository)
+        
+        repository.update_session_overall_score(
+            session_id=session_uuid,
+            overall_score_percentage=score_data["overall_percentage"],
+            needs_manual_review=score_data["needs_manual_review"],
+        )
+        
+        if score_data["needs_manual_review"]:
+            send_manual_review_notification(session_uuid, score_data, url, reason="Overall score < 70%")
+            logger.info(
+                "manual_review_triggered",
+                session_id=str(session_uuid),
+                overall_percentage=score_data["overall_percentage"],
+            )
+        else:
+            logger.info(
+                "audit_ready_for_report",
+                session_id=str(session_uuid),
+                overall_percentage=score_data["overall_percentage"],
+            )
+    except Exception as e:
+        logger.error(
+            "overall_score_computation_failed",
+            error=str(e),
+            error_type=type(e).__name__,
+            session_id=str(session_uuid),
         )

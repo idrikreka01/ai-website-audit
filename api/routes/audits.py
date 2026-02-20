@@ -10,14 +10,17 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from api.db import get_db_session
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
     ArtifactResponse,
+    AuditPageResponse,
     AuditQuestionResponse,
+    AuditReportResponse,
+    AuditResultResponse,
     AuditSessionResponse,
     CreateAuditQuestionRequest,
     CreateAuditRequest,
@@ -121,14 +124,12 @@ def create_question(
         return response
     except Exception as e:
         error_msg = str(e)
-        if "unique" in error_msg.lower() or "duplicate" in error_msg.lower():
-            logger.warning(
-                "audit_question_creation_failed_duplicate", key=request.key, error=error_msg
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Question with key '{request.key}' already exists",
-            )
+        logger.error(
+            "audit_question_creation_error",
+            error=error_msg,
+            error_type=type(e).__name__,
+            category=request.category,
+        )
         logger.error(
             "audit_question_creation_error",
             error=error_msg,
@@ -170,14 +171,27 @@ def list_questions(
     return questions
 
 
-# TODO: Implement new audit_results endpoints using AuditResultResponse schema
-# @router.get(
-#     "/questions/{question_id}/results",
-#     response_model=list[AuditResultResponse],
-#     summary="Get all results for a specific question",
-# )
-# def get_question_results(...):
-#     ...
+@router.get(
+    "/questions/{question_id}/results",
+    response_model=list[AuditResultResponse],
+    summary="Get all results for a specific question",
+)
+def get_question_results(
+    question_id: int,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> list[AuditResultResponse]:
+    """
+    Get all audit results for a specific question.
+    
+    Returns all results across all sessions for the given question.
+    """
+    results = service.get_results_by_question(question_id)
+    logger.debug(
+        "audit_question_results_retrieved",
+        question_id=question_id,
+        count=len(results),
+    )
+    return results
 
 
 @router.get(
@@ -186,7 +200,7 @@ def list_questions(
     summary="Get audit question by ID",
 )
 def get_question(
-    question_id: UUID,
+    question_id: int,
     service: Annotated[AuditService, Depends(get_audit_service)],
 ) -> AuditQuestionResponse:
     """
@@ -211,7 +225,7 @@ def get_question(
     summary="Update an audit question",
 )
 def update_question(
-    question_id: UUID,
+    question_id: int,
     request: UpdateAuditQuestionRequest,
     service: Annotated[AuditService, Depends(get_audit_service)],
 ) -> AuditQuestionResponse:
@@ -237,7 +251,7 @@ def update_question(
     summary="Delete an audit question",
 )
 def delete_question(
-    question_id: UUID,
+    question_id: int,
     service: Annotated[AuditService, Depends(get_audit_service)],
 ) -> None:
     """
@@ -255,24 +269,63 @@ def delete_question(
     logger.info("audit_question_deleted", question_id=str(question_id))
 
 
-# TODO: Implement new audit_results endpoints using AuditResultResponse schema
-# @router.get(
-#     "/results/{result_id}",
-#     response_model=AuditResultResponse,
-#     summary="Get an audit result by ID",
-# )
-# def get_result(...):
-#     ...
+@router.get(
+    "/results/{result_id}",
+    response_model=AuditResultResponse,
+    summary="Get an audit result by ID",
+)
+def get_result(
+    result_id: int,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> AuditResultResponse:
+    """
+    Get an audit result by ID.
+    
+    Returns 404 if the result is not found.
+    """
+    result = service.get_result(result_id)
+    if result is None:
+        logger.warning("audit_result_not_found", result_id=result_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit result {result_id} not found",
+        )
+    logger.debug("audit_result_retrieved", result_id=result_id)
+    return result
 
 
-# TODO: Implement new audit_results endpoints using AuditResultResponse schema
-# @router.get(
-#     "/{session_id}/results",
-#     response_model=list[AuditResultResponse],
-#     summary="Get audit results for a session",
-# )
-# def get_audit_results(...):
-#     ...
+@router.get(
+    "/{session_id}/results",
+    response_model=list[AuditResultResponse],
+    summary="Get audit results for a session",
+)
+def get_audit_results(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)],
+) -> list[AuditResultResponse]:
+    """
+    Get all audit results for a session.
+    
+    Returns all results for the given session. Returns an empty list if the
+    session exists but has no results. Returns 404 if the session is not found.
+    """
+    bind_request_context(session_id=str(session_id))
+    
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_results", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+    
+    results = service.get_results_by_session(session_id)
+    logger.debug(
+        "audit_results_retrieved",
+        session_id=str(session_id),
+        result_count=len(results),
+    )
+    return results
 
 
 @router.get(
@@ -338,3 +391,62 @@ def get_audit_artifacts(
         artifact_count=len(artifacts),
     )
     return artifacts
+
+
+@router.get(
+    "/{session_id}/report",
+    response_model=AuditReportResponse,
+    summary="Get JSON report for audit session",
+)
+def get_audit_report(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> AuditReportResponse:
+    """
+    Generate and return JSON report for audit session.
+    
+    Returns a JSON response with audit results, ordered by severity and filtered by tier logic.
+    """
+    bind_request_context(session_id=str(session_id))
+    
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_report", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+    
+    try:
+        from worker.report_generator import generate_audit_report
+        from worker.repository import AuditRepository
+        
+        repository = AuditRepository(service.repository.session)
+        report_data = generate_audit_report(session_id, repository)
+        
+        if "error" in report_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=report_data.get("error", "Session not found"),
+            )
+        
+        logger.info(
+            "json_report_generated",
+            session_id=str(session_id),
+            question_count=len(report_data.get("questions", [])),
+        )
+        
+        return AuditReportResponse(**report_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "json_report_generation_failed",
+            session_id=str(session_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate JSON report: {str(e)}",
+        )

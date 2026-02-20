@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Revenue Recovery Audit - {{ url }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #1a1a1a;
+            line-height: 1.6;
+            padding: 40px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+        .url {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .overall-score {
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .score-high {
+            color: #27ae60;
+        }
+        .score-low {
+            color: #e74c3c;
+        }
+        .section {
+            margin: 40px 0;
+            page-break-inside: avoid;
+        }
+        .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #34495e;
+            padding-bottom: 10px;
+        }
+        .subsection-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #34495e;
+            margin: 25px 0 15px 0;
+        }
+        .chart-container {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .recommended-change {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff;
+            border-left: 4px solid #e74c3c;
+            page-break-inside: avoid;
+        }
+        .recommended-change h4 {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        .recommended-change .fix {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 3px;
+        }
+        .recommended-change .fix-label {
+            font-weight: bold;
+            color: #27ae60;
+            margin-bottom: 5px;
+        }
+        .recommended-change .fix-text {
+            color: #34495e;
+        }
+        .divider {
+            border-top: 1px solid #ddd;
+            margin: 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            page-break-inside: auto;
+        }
+        table thead {
+            background: #2c3e50;
+            color: white;
+        }
+        table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            font-size: 10px;
+        }
+        table tbody tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        .result-pass {
+            color: #27ae60;
+            font-weight: bold;
+            text-align: center;
+        }
+        .result-fail {
+            color: #e74c3c;
+            font-weight: bold;
+            text-align: center;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+        @media print {
+            body {
+                padding: 20px;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">REVENUE RECOVERY AUDIT</h1>
+        <div class="url">{{ url }}</div>
+        <div class="overall-score {{ score_class }}">
+            Overall Score: {{ overall_score }}%
+        </div>
+    </div>
+
+    <div class="section page-break">
+        <h2 class="section-title">Website Performance Summary</h2>
+        
+        {% if chart_html %}
+        <div class="subsection-title">Performance by Category</div>
+        <div class="chart-container">
+            {{ chart_html|safe }}
+        </div>
+        {% endif %}
+
+        {% if failed_questions %}
+        <div class="subsection-title">Recommended Changes</div>
+        {% for question in failed_questions %}
+        <div class="recommended-change">
+            <h4>{{ loop.index }}. {{ question.question }}</h4>
+            {% if question.exact_fix %}
+            <div class="fix">
+                <div class="fix-label">Fix:</div>
+                <div class="fix-text">{{ question.exact_fix }}</div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="divider"></div>
+        {% endfor %}
+        {% endif %}
+    </div>
+
+    {% if passed_questions %}
+    <div class="section page-break">
+        <h2 class="section-title">Passed Checks</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Category</th>
+                    <th>Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for question in passed_questions[:20] %}
+                <tr>
+                    <td>{{ question.question[:60] }}</td>
+                    <td>{{ question.category }}</td>
+                    <td>{{ question.severity }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="section page-break">
+        <h2 class="section-title">Detailed Audit Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Question</th>
+                    <th>Result</th>
+                    <th>Severity</th>
+                    <th>Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for question in questions %}
+                <tr>
+                    <td>{{ question.question[:60] }}</td>
+                    <td class="result-{{ question.result }}">{{ question.result|upper }}</td>
+                    <td>{{ question.severity }}</td>
+                    <td>{{ question.tier }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

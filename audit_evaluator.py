@@ -210,6 +210,52 @@ class AuditRequestBuilder:
             artifacts_dir: Base directory for artifacts
         """
         self.artifacts_dir = Path(artifacts_dir)
+    
+    def _load_performance_data(self, session_id: str, page_type: str, repository) -> Optional[Dict[str, Any]]:
+        """
+        Load performance data (load_timings) from audit_pages table.
+        
+        Returns performance data for desktop and mobile viewports, or None if not available.
+        """
+        if not repository:
+            return None
+        
+        try:
+            from uuid import UUID
+            session_uuid = UUID(session_id.split('__')[-1]) if '__' in session_id else UUID(session_id)
+            pages = repository.get_pages_by_session_id(session_uuid)
+            
+            performance_data = {}
+            
+            for page in pages:
+                if page.get("page_type") == page_type:
+                    viewport = page.get("viewport")
+                    load_timings = page.get("load_timings", {})
+                    
+                    if load_timings and isinstance(load_timings, dict):
+                        if viewport not in performance_data:
+                            performance_data[viewport] = {}
+                        
+                        total_load_ms = load_timings.get("total_load_duration_ms")
+                        if total_load_ms is not None:
+                            performance_data[viewport]["total_load_duration_ms"] = total_load_ms
+                        
+                        network_idle_ms = load_timings.get("network_idle_duration_ms")
+                        if network_idle_ms is not None:
+                            performance_data[viewport]["network_idle_duration_ms"] = network_idle_ms
+                        
+                        ready_time = load_timings.get("ready")
+                        if ready_time:
+                            performance_data[viewport]["ready_time"] = ready_time
+                        
+                        soft_timeout = load_timings.get("soft_timeout")
+                        if soft_timeout is not None:
+                            performance_data[viewport]["soft_timeout"] = soft_timeout
+            
+            return performance_data if performance_data else None
+            
+        except Exception:
+            return None
 
     def load_screenshot_url(self, session_id: str, page_type: str, viewport: str) -> Optional[str]:
         """
@@ -288,7 +334,8 @@ class AuditRequestBuilder:
         page_type: str,
         questions: Dict[str, Dict[str, Any]],
         chunk_size: int = 8000,
-        include_screenshots: bool = False
+        include_screenshots: bool = False,
+        repository = None
     ) -> Dict[str, Any]:
         """
         Build OpenAI Responses API request with all context and questions.
@@ -309,35 +356,37 @@ class AuditRequestBuilder:
 
 STRICT EVALUATION RULES:
 1. Return exactly ONE result per provided question_id. No missing IDs, no duplicates.
-2. Allowed outputs: PASS or FAIL ONLY. Do not return UNKNOWN. Return PASS/FAIL only.
-3. If evidence is missing, inconclusive, or unclear, return FAIL.
+2. Allowed outputs: PASS, FAIL, or UNKNOWN.
+3. Confidence gating: FAIL requires confidence >= 8 AND clear evidence. If evidence is missing, inconclusive, unclear, or confidence < 8, return UNKNOWN instead of FAIL.
 4. Device rule: If mobile version fails a check, overall result is FAIL (both desktop and mobile must pass).
 5. Evidence-based only: Do not infer hidden behavior. Use only the provided evidence blocks.
-6. Evidence citations: In the evidence field, cite specific source labels (e.g., "DESKTOP_HTML_CHUNK 01", "MOBILE_VISIBLE_TEXT", "DESKTOP_FEATURES_JSON").
-7. Semantic equivalence: Use semantic equivalence for policy labels (e.g., "Returns" satisfies return policy discoverability). Do not fail solely due to label wording differences when meaning is clearly equivalent.
+6. Answer field: Write ONLY the reasoning and explanation. DO NOT include chunk references (e.g., "DESKTOP_HTML_CHUNK 03", "MOBILE_VISIBLE_TEXT"), evidence labels, or technical citations. Write in plain, user-friendly language describing what you found and why.
+7. Evidence field: Cite specific source labels (e.g., "DESKTOP_HTML_CHUNK 01", "MOBILE_VISIBLE_TEXT", "DESKTOP_FEATURES_JSON") ONLY in the evidence field, not in the answer field.
+8. Semantic equivalence: Use semantic equivalence for policy labels (e.g., "Returns" satisfies return policy discoverability). Do not fail solely due to label wording differences when meaning is clearly equivalent.
 
 EVALUATION PROCESS:
 For each question:
-1. Review the PASS/FAIL criteria carefully
-2. Examine ALL provided evidence blocks (desktop HTML chunks, mobile HTML chunks, desktop/mobile visible text, desktop/mobile features JSON, screenshots)
+1. Review the PASS/FAIL/UNKNOWN criteria carefully
+2. Examine ALL provided evidence blocks (desktop HTML chunks, mobile HTML chunks, desktop/mobile visible text, desktop/mobile features JSON, screenshots, performance data)
 3. Check both desktop AND mobile versions
 4. Determine if criteria are met on BOTH devices
 5. Return PASS only if criteria are clearly met on both devices
-6. Return FAIL if criteria are not met, unclear, or evidence is missing
-7. Provide a clear answer explaining your reasoning
-8. Cite specific evidence source labels that support your decision
-9. Assign a confidence_score_1_to_10 (integer 1-10) based on evidence clarity:
+6. Return FAIL only if criteria are clearly NOT met AND you have high confidence (>=8) AND clear evidence
+7. Return UNKNOWN if evidence is insufficient, unclear, conflicting, or confidence is low (<8)
+8. Provide a clear answer explaining your reasoning in plain language WITHOUT chunk references or technical labels
+9. In the evidence field, cite specific evidence source labels that support your decision
+10. Assign confidence_score_1_to_10 (integer 1-10). If confidence < 8, you MUST return UNKNOWN, not FAIL. Only return FAIL when confidence >= 8 AND evidence clearly shows failure.
    - 10 = Very clear direct evidence on both devices, unambiguous
    - 7-9 = Mostly clear evidence, minor ambiguity or single-device clarity
-   - 4-6 = Partial or weak evidence, some uncertainty
-   - 1-3 = Conflicting or highly uncertain evidence, significant ambiguity
+   - 4-6 = Partial or weak evidence → prefer UNKNOWN
+   - 1-3 = Conflicting or highly uncertain evidence → UNKNOWN
 
 Return results as JSON with this exact schema:
 {
   "results": [
     {
       "question_id": "string",
-      "pass_fail": "PASS|FAIL",
+      "pass_fail": "PASS|FAIL|UNKNOWN",
       "answer": "string",
       "evidence": "string",
       "confidence_score_1_to_10": integer (1-10)
@@ -422,6 +471,16 @@ Return results as JSON with this exact schema:
                 "image_url": mobile_screenshot_url
             })
         
+        performance_data = self._load_performance_data(session_id, page_type, repository)
+        if performance_data:
+            perf_text = "[PERFORMANCE_DATA]\n"
+            perf_text += json.dumps(performance_data, indent=2)
+            perf_text += "\n[/PERFORMANCE_DATA]"
+            content_items.append({
+                "type": "input_text",
+                "text": perf_text
+            })
+        
         sorted_questions = QuestionSorter.sort_questions(questions)
         
         questions_block = "[QUESTIONS]\n\n"
@@ -462,7 +521,7 @@ Return results as JSON with this exact schema:
                                         "question_id": {"type": "string"},
                                         "pass_fail": {
                                             "type": "string",
-                                            "enum": ["PASS", "FAIL"]
+                                            "enum": ["PASS", "FAIL", "UNKNOWN"]
                                         },
                                         "answer": {"type": "string"},
                                         "evidence": {"type": "string"},
@@ -577,7 +636,90 @@ class AuditEvaluator:
         input_per_1m = float(os.getenv("OPENAI_PRICE_INPUT_PER_1M", "0"))
         output_per_1m = float(os.getenv("OPENAI_PRICE_OUTPUT_PER_1M", "0"))
         
-        request_payload = self.builder.build_request(session_id, page_type, questions, chunk_size, include_screenshots=include_screenshots)
+        max_questions_per_batch = 30
+        question_items = list(questions.items())
+        total_questions = len(question_items)
+        
+        if total_questions <= max_questions_per_batch:
+            return self._run_single_batch(
+                session_id, page_type, questions, chunk_size, model, save_response,
+                include_screenshots, repository, input_per_1m, output_per_1m
+            )
+        
+        all_results = {}
+        num_batches = (total_questions + max_questions_per_batch - 1) // max_questions_per_batch
+        
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * max_questions_per_batch
+            end_idx = min(start_idx + max_questions_per_batch, total_questions)
+            batch_questions = dict(question_items[start_idx:end_idx])
+            
+            batch_results = self._run_single_batch(
+                session_id, page_type, batch_questions, chunk_size, model, False,
+                include_screenshots, repository, input_per_1m, output_per_1m
+            )
+            all_results.update(batch_results)
+        
+        if save_response:
+            from pathlib import Path
+            artifact_page_type = "pdp" if page_type == "product" else page_type
+            output_dir = Path(self.artifacts_dir) / session_id / artifact_page_type
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / "answers.json"
+            
+            output_data = {
+                "metadata": {
+                    "model": model,
+                    "session_id": session_id,
+                    "page_type": page_type,
+                    "batched": True,
+                    "num_batches": num_batches
+                },
+                "results": all_results
+            }
+            
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+        
+        if repository:
+            saved_count = 0
+            for question_id_str, result_data in all_results.items():
+                try:
+                    question_id = int(question_id_str)
+                    result_value = result_data.get("result", "fail")
+                    reason = result_data.get("reason", "")
+                    confidence_score = result_data.get("confidence_score", 5)
+                    
+                    repository.create_audit_result(
+                        question_id=question_id,
+                        session_id=session_id,
+                        result=result_value,
+                        reason=reason,
+                        confidence_score=confidence_score,
+                    )
+                    saved_count += 1
+                except (ValueError, TypeError):
+                    pass
+                except Exception:
+                    pass
+        
+        return all_results
+    
+    def _run_single_batch(
+        self,
+        session_id: str,
+        page_type: str,
+        questions: Dict[str, Dict[str, Any]],
+        chunk_size: int,
+        model: str,
+        save_response: bool,
+        include_screenshots: bool,
+        repository,
+        input_per_1m: float,
+        output_per_1m: float
+    ) -> Dict[str, Any]:
+        """Run a single batch of questions."""
+        request_payload = self.builder.build_request(session_id, page_type, questions, chunk_size, include_screenshots=include_screenshots, repository=repository)
         request_payload["model"] = model
         
         start_time = time.time()
@@ -676,7 +818,7 @@ class AuditEvaluator:
                 for question_id_str, result_data in transformed.items():
                     try:
                         question_id = int(question_id_str)
-                        result_value = result_data.get("result", "FAIL")
+                        result_value = result_data.get("result", "fail")
                         reason = result_data.get("reason", "")
                         confidence_score = result_data.get("confidence_score", 5)
                         
@@ -705,7 +847,15 @@ class AuditEvaluator:
                     }
                 }
                 
-                response = self.client.responses.create(**request_payload)
+                request_payload_fallback = self.builder.build_request(session_id, page_type, questions, chunk_size, include_screenshots=include_screenshots, repository=repository)
+                request_payload_fallback["model"] = model
+                request_payload_fallback.pop("text", None)
+                request_payload_fallback["text"] = {
+                    "format": {
+                        "type": "json_object"
+                    }
+                }
+                response = self.client.responses.create(**request_payload_fallback)
                 
                 cost_data = self.calculate_cost_usd(response, input_per_1m, output_per_1m)
                 
@@ -793,7 +943,7 @@ class AuditEvaluator:
                     for question_id_str, result_data in transformed.items():
                         try:
                             question_id = int(question_id_str)
-                            result_value = result_data.get("result", "FAIL")
+                            result_value = result_data.get("result", "fail")
                             reason = result_data.get("reason", "")
                             confidence_score = result_data.get("confidence_score", 5)
                             
@@ -846,7 +996,7 @@ class AuditEvaluator:
             evidence = item.get("evidence", "")
             confidence_raw = item.get("confidence_score_1_to_10", 5)
             
-            if pass_fail not in ["PASS", "FAIL"]:
+            if pass_fail not in ["PASS", "FAIL", "UNKNOWN"]:
                 pass_fail = "FAIL"
             
             try:
@@ -859,12 +1009,15 @@ class AuditEvaluator:
             if question_id == "14" and q14_policy_data:
                 pass_fail = self._apply_q14_policy_rule(pass_fail, answer, evidence, q14_policy_data)
             
-            reason = answer
-            if evidence and evidence not in answer:
-                reason = f"{answer} {evidence}".strip()
+            reason = self._clean_reason(answer)
             
             question_key = str(question_id)
-            result_value = "PASS" if pass_fail == "PASS" else "FAIL"
+            if pass_fail == "PASS":
+                result_value = "pass"
+            elif pass_fail == "UNKNOWN":
+                result_value = "unknown"
+            else:
+                result_value = "fail"
             
             transformed[question_key] = {
                 "result": result_value,
@@ -873,6 +1026,51 @@ class AuditEvaluator:
             }
         
         return transformed
+    
+    def _clean_reason(self, text: str) -> str:
+        """
+        Remove chunk references and technical labels from reason text.
+        
+        Removes patterns like:
+        - DESKTOP_HTML_CHUNK 01, DESKTOP_HTML_CHUNK 03, etc.
+        - MOBILE_HTML_CHUNK 01, MOBILE_HTML_CHUNK 03, etc.
+        - DESKTOP_VISIBLE_TEXT, MOBILE_VISIBLE_TEXT
+        - DESKTOP_FEATURES_JSON, MOBILE_FEATURES_JSON
+        - Any bracketed labels like [DESKTOP_HTML_CHUNK 03]
+        """
+        if not text:
+            return ""
+        
+        import re
+        
+        cleaned = text
+        
+        patterns_to_remove = [
+            r'DESKTOP_HTML_CHUNK\s+\d+',
+            r'MOBILE_HTML_CHUNK\s+\d+',
+            r'DESKTOP_VISIBLE_TEXT',
+            r'MOBILE_VISIBLE_TEXT',
+            r'DESKTOP_FEATURES_JSON',
+            r'MOBILE_FEATURES_JSON',
+            r'\[DESKTOP_HTML_CHUNK\s+\d+\]',
+            r'\[MOBILE_HTML_CHUNK\s+\d+\]',
+            r'\[DESKTOP_VISIBLE_TEXT\]',
+            r'\[MOBILE_VISIBLE_TEXT\]',
+            r'\[DESKTOP_FEATURES_JSON\]',
+            r'\[MOBILE_FEATURES_JSON\]',
+        ]
+        
+        for pattern in patterns_to_remove:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = cleaned.strip()
+        
+        cleaned = re.sub(r'[;,]+\s*', ', ', cleaned)
+        cleaned = re.sub(r'\s*,\s*,+', ', ', cleaned)
+        cleaned = cleaned.strip(' ,;')
+        
+        return cleaned
     
     def _load_q14_policy_data(self, session_id: str, page_type: str) -> Dict[str, str]:
         """Load visible text and features JSON for Q14 policy link checking."""
