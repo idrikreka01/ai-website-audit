@@ -1,0 +1,541 @@
+{
+    "session_id": "b351cc10-894e-493b-aeec-20b419008f3e",
+    "url": "https://purple.com/",
+    "overall_score_percentage": 95.14,
+    "overall_score": 83.61,
+    "stage_scores": {
+      "awareness": 76.19,
+      "consideration": 100,
+      "conversion": 73.68
+    },
+    "category_scores": [
+      {
+        "category": "Authority and Credibility Signals",
+        "score": 100,
+        "total_questions": 1,
+        "total_weight": 12
+      },
+      {
+        "category": "Checkout Process Simplicity",
+        "score": 100,
+        "total_questions": 1,
+        "total_weight": 12
+      },
+      {
+        "category": "Clear Next Step Direction",
+        "score": 100,
+        "total_questions": 2,
+        "total_weight": 21
+      },
+      {
+        "category": "Clear Offer and Value Proposition",
+        "score": 100,
+        "total_questions": 3,
+        "total_weight": 15
+      },
+      {
+        "category": "Clear Target Audience Fit",
+        "score": 100,
+        "total_questions": 1,
+        "total_weight": 12
+      },
+      {
+        "category": "Clear Use Case For Target Audience",
+        "score": 100,
+        "total_questions": 5,
+        "total_weight": 21
+      },
+      {
+        "category": "Customer Reviews and Stories",
+        "score": 100,
+        "total_questions": 2,
+        "total_weight": 21
+      },
+      {
+        "category": "Pricing and Cost Transparency",
+        "score": 100,
+        "total_questions": 2,
+        "total_weight": 30
+      },
+      {
+        "category": "Proof Backing Claims Being Made",
+        "score": 100,
+        "total_questions": 3,
+        "total_weight": 9
+      },
+      {
+        "category": "Frictionless Form and Field Experience",
+        "score": 0,
+        "total_questions": 2,
+        "total_weight": 0
+      },
+      {
+        "category": "Primary Call to Action Strength",
+        "score": 0,
+        "total_questions": 1,
+        "total_weight": 0
+      },
+      {
+        "category": "Simple and Intuitive Navigation",
+        "score": 0,
+        "total_questions": 2,
+        "total_weight": 15
+      },
+      {
+        "category": "Technical Performance and Reliability",
+        "score": 0,
+        "total_questions": 1,
+        "total_weight": 15
+      }
+    ],
+    "category_scores_by_stage": {
+      "awareness": [
+        {
+          "category": "Clear Next Step Direction",
+          "score": 100,
+          "total_questions": 2,
+          "total_weight": 21
+        },
+        {
+          "category": "Clear Offer and Value Proposition",
+          "score": 100,
+          "total_questions": 3,
+          "total_weight": 15
+        },
+        {
+          "category": "Clear Target Audience Fit",
+          "score": 100,
+          "total_questions": 1,
+          "total_weight": 12
+        },
+        {
+          "category": "Simple and Intuitive Navigation",
+          "score": 0,
+          "total_questions": 2,
+          "total_weight": 15
+        }
+      ],
+      "consideration": [
+        {
+          "category": "Authority and Credibility Signals",
+          "score": 100,
+          "total_questions": 1,
+          "total_weight": 12
+        },
+        {
+          "category": "Clear Use Case For Target Audience",
+          "score": 100,
+          "total_questions": 5,
+          "total_weight": 21
+        },
+        {
+          "category": "Customer Reviews and Stories",
+          "score": 100,
+          "total_questions": 2,
+          "total_weight": 21
+        },
+        {
+          "category": "Proof Backing Claims Being Made",
+          "score": 100,
+          "total_questions": 3,
+          "total_weight": 9
+        }
+      ],
+      "conversion": [
+        {
+          "category": "Checkout Process Simplicity",
+          "score": 100,
+          "total_questions": 1,
+          "total_weight": 12
+        },
+        {
+          "category": "Pricing and Cost Transparency",
+          "score": 100,
+          "total_questions": 2,
+          "total_weight": 30
+        },
+        {
+          "category": "Frictionless Form and Field Experience",
+          "score": 0,
+          "total_questions": 2,
+          "total_weight": 0
+        },
+        {
+          "category": "Primary Call to Action Strength",
+          "score": 0,
+          "total_questions": 1,
+          "total_weight": 0
+        },
+        {
+          "category": "Technical Performance and Reliability",
+          "score": 0,
+          "total_questions": 1,
+          "total_weight": 15
+        }
+      ]
+    },
+    "storefront_report_card": {
+      "stage_descriptions": {
+        "awareness": "Clear brand and shopping paths, but improve homepage load speed and stability to prevent early drop-off.",
+        "conversion": "Checkout flow works end-to-end, but improve checkout speed and stability to reduce drop-off.",
+        "consideration": "Strong decision support, but product pages may not load—verify PDP access and content delivery."
+      },
+      "final_thoughts": "Purple’s storefront excels in product evaluation with a perfect Consideration score, but overall revenue is being 'taxed' by performance bottlenecks and layout instability at the critical homepage and checkout stages. While the merchandising journey effectively drives shoppers toward a decision, slow load times and shifting elements increase bounce rates and cart abandonment, particularly on mobile. By prioritizing technical optimizations to ensure pages become usable within three seconds, Purple can stop funnel leakage at its highest-volume points and significantly improve conversion rates and ROAS without needing to increase its existing marketing spend."
+    },
+    "needs_manual_review": false,
+    "tier1_passed": false,
+    "tier2_passed": false,
+    "tier3_included": false,
+    "questions": [
+      {
+        "question_id": 426,
+        "question": "Does the headline tell me exactly what you sell and why buyers should care?",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Offer and Value Proposition",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "Your headline does not clearly communicate what you sell or who it’s for at first glance. Rewrite it to state the product category, target customer, and primary outcome directly so visitors immediately understand the value of your products without scrolling",
+        "result": "unknown",
+        "reason": "The hero headline shown is a sale message (“Up to $500 off a mattress + instant gift credit”). While it implies mattresses are being sold, it functions primarily as a promotion and does not clearly explain, in plain language, what the company sells overall and why a first-time visitor should care beyond the discount. The supporting line about “Less pain, better sleep” helps with benefit, but the above-the-fold focus is still promotional rather than a clear product-and-benefit value proposition.",
+        "confidence_score": 7
+      },
+      {
+        "question_id": 430,
+        "question": "Does the homepage avoid long uninterrupted blocks of text without visual breaks which can cause users to miss important information?",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Offer and Value Proposition",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "We found that the homepage contains long sections of uninterrupted text that make it harder to scan and digest information. Dense text increases cognitive load and can cause users to miss important details. Breaking content into shorter sections with clear visual separation improves readability and keeps attention focused.",
+        "result": "pass",
+        "reason": "The homepage content is organized into distinct, scannable sections with headings, short paragraphs, icons, product cards, and repeated visual breaks. The text is generally presented in small chunks (e.g., guarantee icons, product tiles with short descriptions, bullet-style benefit sections), which avoids long uninterrupted blocks that would be hard to scan.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 435,
+        "question": "Does the homepage become usable within 3 seconds, with no major layout shifts or delays?",
+        "category": "Awareness",
+        "bar_chart_category": "Simple and Intuitive Navigation",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "During testing, your homepage took [X] seconds to fully load and stabilize, which is longer than the recommended threshold. Compress large images and delay non-essential scripts so the page becomes usable within three seconds without layout shifts.",
+        "result": "fail",
+        "reason": "The performance data shows total load durations around 7.8 seconds on both desktop and mobile, which is well above the 3-second threshold required for this check. Since mobile also exceeds the limit, the overall result fails.",
+        "confidence_score": 10
+      },
+      {
+        "question_id": 454,
+        "question": "At a quick glance, does the product page clearly communicate what the best-selling product is and why it matters without requiring detailed reading?",
+        "category": "Consideration",
+        "bar_chart_category": "Clear Use Case For Target Audience",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "We reviewed your bestseller product page and while the product itself is clear and well-presented, the immediate value and exact problem it solves are not spelled out as strongly as they could be. Product pages that clearly state who the product is for and what pain it solves tend to convert better than descriptive-only messaging. Consider adding a more outcome- or emotion-driven line near the title to increase Add to Cart rate.",
+        "result": "unknown",
+        "reason": "The page clearly identifies the product name and shows some top-level benefit-style bullets (e.g., balanced support and not trapping heat), but the evidence provided doesn’t conclusively establish that the product is explicitly framed as the “best-selling” product near the top, nor that the ideal buyer and the primary problem solved are obvious without interpretation. Because the criteria require strong quick-glance clarity (including best-selling identification) and the available evidence is not definitive on that point, this cannot be confidently marked as a pass or fail.",
+        "confidence_score": 6
+      },
+      {
+        "question_id": 465,
+        "question": "Does the product description explicitly name the buyer’s problem or frustration it solves, instead of only describing the product itself?",
+        "category": "Consideration",
+        "bar_chart_category": "Proof Backing Claims Being Made",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "We found that the product description mentions the buyer’s problem, but it could more clearly and directly call out the pain point upfront. Strengthening this language to explicitly name the buyer’s frustration helps shoppers self-identify faster and move forward with greater confidence.",
+        "result": "unknown",
+        "reason": "The top-of-page messaging is largely benefit/feature oriented (e.g., support, heat, GelFlex Grid) and warranty/trial claims. While there are outcomes implied (pressure relief, sleep quality improvement), the evidence does not clearly show an explicit, buyer-frustration style statement (e.g., pain, overheating, tossing/turning) presented as the product description’s lead. Since it’s not clear what is considered the “product description” section in the provided view and whether a direct pain-point statement appears there, the result is inconclusive.",
+        "confidence_score": 6
+      },
+      {
+        "question_id": 483,
+        "question": "The mini-cart or cart page offers 1-click \"Frequently Bought Together\" additions to increase order size before the final checkout.",
+        "category": "Conversion",
+        "bar_chart_category": "Pricing and Cost Transparency",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "While reviewing your mini-cart, we found a missed opportunity to increase order size. Adding easy upsells such as bestsellers, bundles, or subscriptions directly inside the mini-cart encourages impulse add-ons and can significantly increase average order value.",
+        "result": "pass",
+        "reason": "The cart page includes a dedicated upsell section (“You might also like:”) showing related add-on products (e.g., bed frame, pillow, mattress protector) with visible prices and discount callouts (like “20% off”). Each suggested product includes a “Quick Add” button, indicating it can be added directly from the cart without needing to navigate away. This upsell area appears within the cart experience before checkout, supporting easy order-size increases on both desktop and mobile.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 487,
+        "question": "All fees (e.g., tax, shipping) are shown before the final checkout screen.",
+        "category": "Conversion",
+        "bar_chart_category": "Pricing and Cost Transparency",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "During checkout review, we noticed that full pricing clarity isn’t reinforced early enough. Showing tax and shipping costs before the payment step removes surprise fees, builds trust, and reduces last-step checkout abandonment.",
+        "result": "pass",
+        "reason": "Both desktop and mobile show an order summary with a clear cost breakdown before placing the order, including shipping (shown as Free), estimated taxes (with a prompt to enter a zip code), discounts, and a total. Since taxes depend on location, the checkout still shows where taxes will be calculated and presents the current total prior to the final “Place Order” action, making fees visible before the final submission step.",
+        "confidence_score": 8
+      },
+      {
+        "question_id": 488,
+        "question": "The checkout page loads without delay and is visually stable within 3 seconds.",
+        "category": "Conversion",
+        "bar_chart_category": "Technical Performance and Reliability",
+        "tier": 1,
+        "severity": 5,
+        "exact_fix": "During performance testing, we found your checkout took approximately [X] seconds to fully load and stabilize, which exceeds the recommended 3-second threshold. Slower or shifting checkouts significantly increase abandonment, making load speed one of the highest-impact conversion fixes.",
+        "result": "fail",
+        "reason": "Performance data indicates the checkout takes about 5 seconds to load on both desktop and mobile, which exceeds the 3-second requirement. With load duration clearly over the threshold, the page does not meet the “within 3 seconds” criterion.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 427,
+        "question": "Is a buyer-relevant problem or frustration mentioned in the subheadline?",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Target Audience Fit",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "The subheadline does not clearly reflect the buyer’s main problem. Rewrite it to call out the specific issue your target customer is dealing with and connect that problem directly to the outcome your product delivers.Avoid generic brand language.",
+        "result": "pass",
+        "reason": "The above-the-fold hero copy communicates a specific customer problem and desired outcome: “Less pain, better sleep.” This directly frames the user’s pain point (pain/poor sleep) and why the offer matters, and it appears immediately on page load alongside the main hero messaging.",
+        "confidence_score": 8
+      },
+      {
+        "question_id": 431,
+        "question": "Above the fold, the visual hierarchy makes the headline and primary CTA the most dominant elements, with no competing blocks that distract from the first click",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Next Step Direction",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "The first screen when your site loads contains too many competing elements for attention. Simplify the above-the-fold layout so the headline and primary CTA are visually dominant and secondary actions are pushed lower.",
+        "result": "pass",
+        "reason": "Above the fold, the page emphasizes the outcome and purpose tied to the product category (mattresses) through the main hero message and prominent CTAs to shop/compare mattresses, supported by an in-context lifestyle image of someone on a mattress. The first screen quickly communicates what the visitor is meant to do (shop mattresses) and the expected outcome (better sleep/less pain).",
+        "confidence_score": 8
+      },
+      {
+        "question_id": 437,
+        "question": "An aggregate star rating (e.g., \"4.8/5 Stars\") or social proof (Used by 5,000+ people) is visible near the top of the home page.",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Offer and Value Proposition",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "We noticed that social proof exists, but its placement could work harder. Reviews and star ratings tend to amplify headline impact when positioned nearby. Making your rating or customer count more noticeable near headlines or primary CTAs can increase confidence and improve click-through rate.",
+        "result": "unknown",
+        "reason": "Although star ratings and large review counts are present on the homepage, they appear in the “Mattresses recommended for you” section and the reviews section, not clearly in the initial hero area. The evidence does not confirm that any aggregate star rating or social proof is visible above the fold without scrolling on either device.",
+        "confidence_score": 7
+      },
+      {
+        "question_id": 456,
+        "question": "Does the page clearly describe the 'ideal user' and the specific situation where this product works best?",
+        "category": "Consideration",
+        "bar_chart_category": "Clear Use Case For Target Audience",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "We reviewed your product page and found that while the product itself is clear, the specific who this is for and when it works best is not immediately stated. Adding one short sentence near the top of the description that names the ideal user and primary use case helps shoppers quickly self-identify and move forward with confidence.",
+        "result": "unknown",
+        "reason": "The page includes some relevance cues (e.g., “medium-firm feel, ” and later FAQ references to sleep styles and needs), but the evidence does not clearly show that the ideal user and the specific best-use situation are described near the top in a way that a shopper can immediately self-identify without reading further down. Because the placement and prominence of ideal-user guidance at the top is not clearly demonstrated, this cannot be scored confidently.",
+        "confidence_score": 6
+      },
+      {
+        "question_id": 464,
+        "question": "On mobile, are key product details easy to scan quickly without requiring sustained reading or excessive scrolling?",
+        "category": "Consideration",
+        "bar_chart_category": "Clear Use Case For Target Audience",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "On mobile, most users skim rather than read. We found that some content requires sustained reading. Breaking key points into scannable sections, headers, or bullets helps ensure important benefits aren’t missed and keeps shoppers moving toward conversion.",
+        "result": "pass",
+        "reason": "On mobile, key details are structured for scanning: there are short benefit bullets near the top, clearly separated sections with headings (e.g., guarantee, shipping timing), and later segmented modules like “Quick to ship” and “Product Details” with specification blocks. The content is presented in digestible chunks rather than continuous dense paragraphs, supporting skim reading.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 467,
+        "question": "Are trust signals such as reviews, ratings, or customer counts placed near primary CTAs or pricing where buying decisions are made?",
+        "category": "Consideration",
+        "bar_chart_category": "Customer Reviews and Stories",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "We noticed that social proof is present, but its impact depends on placement. Reviews and customer counts perform best when positioned closest to prices and primary CTAs, where buyers are deciding whether to act. This strengthens confidence at the moment of action and consistently leads to higher add-to-cart rates.",
+        "result": "pass",
+        "reason": "A star rating and review count are displayed near the top where pricing is shown, so shoppers see social proof in the same decision area as the price before taking action. This places credibility signals at the moment buyers evaluate purchase value.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 475,
+        "question": "Does the main imagery show the specific result or 'after-state' the customer achieves by using the product?",
+        "category": "Consideration",
+        "bar_chart_category": "Proof Backing Claims Being Made",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "In your image galleries for product pages, consider moving or creating pictures of people using your products to the front of the gallery. The more humanized your product pages feel, the higher chance someone converts.",
+        "result": "unknown",
+        "reason": "The main imagery appears to show the mattress in lifestyle/bedroom contexts and some feature visuals/videos, but the evidence does not clearly demonstrate a specific, obvious “after-state” transformation (beyond implied better sleep). Without a clear depiction of the outcome visually (not just the product in a setting), it’s not possible to confirm whether the primary image meets the ‘after-state’ requirement.",
+        "confidence_score": 6
+      },
+      {
+        "question_id": 479,
+        "question": "The page proactively answers buyer questions about fit, sizing, compatibility, or expectations with an FAQ or similar section",
+        "category": "Consideration",
+        "bar_chart_category": "Authority and Credibility Signals",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "During review, we did not find a strong FAQ section answering common buyer questions directly on the product page. Adding a concise FAQ below the buy button helps reduce last-minute hesitation, keeps shoppers from bouncing, and provides an additional SEO lift.",
+        "result": "pass",
+        "reason": "The page addresses common pre-purchase uncertainties with visible sizing and fit/compatibility elements: a clear size selector and size guide are present near the purchase controls, and there is guidance about bed frame compatibility (“Do I need a bed frame?” with details and a link). These elements reduce guesswork about fit and expectations.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 490,
+        "question": "Can a user reach the shipping info screen without being forced to create a password or 'Sign In'?",
+        "category": "Conversion",
+        "bar_chart_category": "Checkout Process Simplicity",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "We noticed checkout requires unnecessary commitment early in the process. Allowing guest checkout removes friction at the moment of purchase, keeps momentum high, and consistently increases checkout completion rates.",
+        "result": "pass",
+        "reason": "The shipping form is immediately available and includes fields like name, address, and phone without any requirement to create a password. While a “Sign in” button is present, it appears optional and does not block access to entering shipping information as a guest.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 499,
+        "question": "If a field is missed, the form shows the error clearly, instantly, and scrolls the user back to the problem area.",
+        "category": "Conversion",
+        "bar_chart_category": "Frictionless Form and Field Experience",
+        "tier": 1,
+        "severity": 4,
+        "exact_fix": "During form testing, error messages were not always immediately clear or visible. When shoppers don’t know what went wrong, they abandon checkout. Showing instant, clear errors and auto-scrolling to the issue reduces frustration and prevents unnecessary drop-offs.",
+        "result": "unknown",
+        "reason": "The provided evidence shows the shipping form and buttons, but it does not show any validation event (such as submitting with missing fields), any error messages, or any behavior like auto-scrolling to the problem field. Without observing an actual error state, it’s not possible to confirm whether errors are instant, clear, and whether the page scrolls to the issue area.",
+        "confidence_score": 6
+      },
+      {
+        "question_id": 432,
+        "question": "On mobile, does the homepage use clear headers, spacing, and visual hierarchy to guide users through the content?",
+        "category": "Awareness",
+        "bar_chart_category": "Clear Next Step Direction",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "During review, we found that the mobile layout does not always clearly guide users through the page. When sections lack strong headers, spacing, or visual hierarchy, important information can blend together and be overlooked. Using clearer section breaks and hierarchy helps users understand each part of the page and move through the content more easily",
+        "result": "pass",
+        "reason": "On mobile, the page uses clear section headings (sale headline, guarantee bar, recommended products, financing banner, feature section, guarantee section, reviews, help section, footer). Content is separated by distinct blocks, cards, and icons, making it easy to follow what is primary versus supporting as users scroll.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 440,
+        "question": "Do buyers have a clear and easy way to contact the company for questions, comments, concerns, or order information?",
+        "category": "Awareness",
+        "bar_chart_category": "Simple and Intuitive Navigation",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We looked for a clear way to contact support and found it took extra effort. Many shoppers want reassurance they’re dealing with a real company, especially before purchase. Making your contact or support option more obvious can increase trust and reduce bounce from uncertainty.",
+        "result": "unknown",
+        "reason": "The homepage provides several contact methods (phone and live chat links, plus a contact page link and order tracking link), including click-to-call on mobile. However, the evidence does not show any stated expectations for response time or service hours (for example, chat hours or “replies within X hours”). Because response-time expectations are part of the pass requirement, this cannot be confirmed as a full pass from the provided information.",
+        "confidence_score": 7
+      },
+      {
+        "question_id": 455,
+        "question": "Are trust signals (such as star ratings or review counts) placed near the price or primary call to action where the buying decision is made?",
+        "category": "Consideration",
+        "bar_chart_category": "Customer Reviews and Stories",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We checked how reviews are displayed and found they are visible, but not tightly connected to the moment of action. Pairing trust signals like star ratings directly next to price or the primary CTA increases the likelihood of clicks by reinforcing confidence at the exact decision point.",
+        "result": "pass",
+        "reason": "The rating and review count appear in the top section near the product title and pricing, which is where shoppers decide whether the price feels justified. This places social proof close to the buying decision area rather than forcing users to scroll to find it.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 457,
+        "question": "Technical details are easy to find in a dedicated section such as accordion tabs or specs, and are not buried inside long paragraphs",
+        "category": "Consideration",
+        "bar_chart_category": "Clear Use Case For Target Audience",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We found that your product details are present, but they require more reading than most shoppers typically do. Buyers tend to scan first and read second, especially on mobile. Keeping emotional benefits and core claims visible while grouping technical details into accordions or labeled sections helps reduce friction and keeps users moving toward purchase.",
+        "result": "pass",
+        "reason": "Key benefits are presented as short, digestible bullet-style items with accompanying icons near the top section (e.g., balanced support that doesn’t trap heat, GelFlex Grid and foam layers, reported sleep quality improvement). This format supports fast scanning instead of requiring reading long paragraphs.",
+        "confidence_score": 9
+      },
+      {
+        "question_id": 466,
+        "question": "Do the customer reviews specifically mention the same benefits or results that are promised in the product description?",
+        "category": "Consideration",
+        "bar_chart_category": "Proof Backing Claims Being Made",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We reviewed your reviews and found an opportunity to feature the testimonial that most closely mirrors your ideal customer’s before-and-after transformation. Highlighting reviews that clearly show a problem → solution outcome near key claims increases trust and makes your promise feel real, which improves click-through rate.",
+        "result": "pass",
+        "reason": "Visible reviews include specific outcome language that aligns with the page’s promised benefits, such as improved sleep quality, comfort, and reduction of hip/shoulder pain. These review statements reinforce the outcomes suggested by the product’s benefit messaging (support/comfort/pressure relief and better sleep).",
+        "confidence_score": 8
+      },
+      {
+        "question_id": 474,
+        "question": "Is it easy for shoppers to increase quantity directly on the product page without friction or confusion?",
+        "category": "Consideration",
+        "bar_chart_category": "Clear Use Case For Target Audience",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We found that increasing quantity on the product page is not clearly encouraged or easy to do. Making the quantity selector more visible and intuitive helps shoppers quickly add multiple units, reduces friction, and increases average order value without changing the core offer.",
+        "result": "unknown",
+        "reason": "The purchase area shows pricing and an “Add to Cart” button, but the evidence provided does not show a clearly visible quantity selector (such as a plus/minus stepper or quantity dropdown) near the Add to Cart control on either desktop or mobile. However, because the evidence may not include the full purchase module UI state, it’s not possible to conclude with high confidence that quantity adjustment is absent or unusable.",
+        "confidence_score": 7
+      },
+      {
+        "question_id": 482,
+        "question": "Does the cart or checkout clearly show delivery timing or shipping estimates?",
+        "category": "Conversion",
+        "bar_chart_category": "Primary Call to Action Strength",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "We found that delivery timing or shipping estimates are not clearly shown in the cart or checkout. Shoppers want to know how quickly an order will arrive, and unclear timelines can cause hesitation or push buyers to faster alternatives.",
+        "result": "unknown",
+        "reason": "The cart shows shipping cost (“Free”), but there is no clearly visible delivery timing or arrival estimate (such as “arrives in 3–5 days” or an estimated delivery date). Since the provided cart content doesn’t show a shipping timeline in the cart/checkout area, it’s not possible to confirm that shoppers are given delivery speed expectations before purchase.",
+        "confidence_score": 7
+      },
+      {
+        "question_id": 496,
+        "question": "Mobile checkout fields support browser autofill (e.g., address or contact info).",
+        "category": "Conversion",
+        "bar_chart_category": "Frictionless Form and Field Experience",
+        "tier": 1,
+        "severity": 3,
+        "exact_fix": "During checkout testing, we noticed several fields require manual entry instead of autofill. Long form typing on mobile is a major drop-off point. Enabling browser autofill or express checkout options reduces friction and significantly improves mobile conversion rates.",
+        "result": "unknown",
+        "reason": "The form fields are labeled, but the evidence does not clearly show autofill-specific attributes (such as autocomplete values) across the key contact and address fields, nor does it demonstrate autofill working in practice. Because browser autofill support cannot be reliably verified from the provided snapshot, this cannot be confirmed.",
+        "confidence_score": 6
+      }
+    ],
+    "stage_summaries": [
+      {
+        "stage": "Awareness",
+        "summary": "From a buyer’s perspective, Purple’s homepage generally communicates the brand quickly and gives clear paths into shopping, so most visitors can start exploring without feeling lost. The biggest blocker at the Awareness stage is navigation reliability tied to speed: if the homepage takes too long to become usable or shifts around while loading, buyers may hesitate, mis-tap, or abandon before they ever reach a product page, which is likely lowering conversions. This shows up right on the homepage where the page loads but takes longer than expected to fully settle, making early navigation feel less dependable. Prioritize making the first view stable and usable fast by compressing oversized homepage images, deferring non-essential scripts, and confirming the header and primary navigation render first without visible movement. After these changes, monitor bounce rate and clicks into key categories, and consider an A/B test that compares the current load behavior versus a “fast-first” version to see whether more buyers reach product browsing sooner.",
+        "generated_at": "2026-02-19T13:15:19.958665+00:00",
+        "model_version": "gpt-5.2"
+      },
+      {
+        "stage": "Consideration",
+        "summary": "From a buyer’s perspective, the Consideration stage on Purple generally supports decision-making, with several key elements in place that help shoppers understand what they’re looking at and continue evaluating options without immediate confusion. The biggest blocker here is that the product page experience appears to be missing or failing to load in the audit context, which likely prevents buyers from accessing the detailed information and reassurance they need before committing, and this is likely lowering conversions. This shows up specifically at the product page level, where the expected product details, proof, and comparison content may not be reliably available when a shopper lands from search, ads, or category browsing. The most direct action is to confirm product pages consistently render for first-time visitors across devices and browsers, then ensure the core sections (price, key benefits, sizing/fit, materials, delivery/returns, and reviews) appear without delays or errors. Once stability is confirmed, run a simple A/B test on the product page’s above-the-fold messaging and proof order to see whether buyers engage more with key details and move to “Add to Cart” with fewer hesitations.",
+        "generated_at": "2026-02-19T13:15:26.075704+00:00",
+        "model_version": "gpt-5.2"
+      },
+      {
+        "stage": "Conversion",
+        "summary": "From a buyer’s perspective, the purchase path is generally reachable and functional, with the cart and checkout both loading successfully and allowing shoppers to continue toward payment without obvious dead ends. The biggest conversion blocker here is performance on the checkout experience, because even small delays or visual shifting at this moment can trigger hesitation, second-guessing, and abandonment when buyers are ready to commit. This shows up specifically on the checkout page, where it took longer than the recommended few seconds to fully load and stabilize, which likely makes the page feel less reliable to time-sensitive shoppers. Prioritize checkout speed and stability by auditing the heaviest scripts and third-party tags on checkout, deferring anything not required to complete payment, and confirming key elements (order summary, shipping, payment fields) render consistently without shifting. After improvements, run a simple before/after test on checkout completion rate and time-to-interactive to confirm buyers move through payment with fewer drop-offs and less hesitation.",
+        "generated_at": "2026-02-19T13:15:30.958350+00:00",
+        "model_version": "gpt-5.2"
+      }
+    ],
+    "actionable_findings": [
+      {
+        "actionable_finding": "During testing, your homepage took 7.8 seconds to fully load and stabilize, which is longer than the recommended threshold. Compress large images and delay non-essential scripts so the page becomes usable within three seconds without layout shifts.",
+        "impact": "High",
+        "category": "Simple and Intuitive Navigation",
+        "tier": 1,
+        "severity": 5,
+        "question_id": 435
+      },
+      {
+        "actionable_finding": "During performance testing, we found your checkout took approximately 5.0 seconds to fully load and stabilize, which exceeds the recommended 3-second threshold. Slower or shifting checkouts significantly increase abandonment, making load speed one of the highest-impact conversion fixes.",
+        "impact": "High",
+        "category": "Technical Performance and Reliability",
+        "tier": 1,
+        "severity": 5,
+        "question_id": 488
+      }
+    ]
+  }

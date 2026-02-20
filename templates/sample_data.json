@@ -1,0 +1,797 @@
+{
+  "meta": {
+    "report_title": "Revenue Recovery Audit",
+    "site_url": "purple.com",
+    "brand_name": "Purple",
+    "prepared_by": "Daniel Gomez",
+    "prepared_by_title": "CEO of Cirrus Media",
+    "company_name": "Cirrus Media",
+    "company_email": "daniel@cirrusmedia.net",
+    "company_phone": "817-948-1179",
+    "company_website": "www.cirrusmedia.net",
+    "report_date": "February 12, 2026",
+    "turnaround": "48 Hours"
+  },
+  "common_issues": [
+    "Missing trust signals",
+    "Not enough social proof",
+    "Unclear target customer",
+    "Confusing navigation",
+    "Clunky checkout process",
+    "Confusing navigation",
+    "Unclear call to action",
+    "Broken links or forms"
+  ],
+  "stages": [
+    {
+      "number": 1,
+      "name": "Awareness",
+      "icon": "eye",
+      "color": "#1e293b",
+      "phase_color": "#3b82f6",
+      "buyer_question": "Do I understand what this brand does and who it's for?",
+      "subtitle": "The First Impression"
+    },
+    {
+      "number": 2,
+      "name": "Consideration",
+      "icon": "heart",
+      "color": "#334155",
+      "phase_color": "#6366f1",
+      "buyer_question": "Does the page give enough proof to prove its what I need",
+      "subtitle": "Building Trust In Products"
+    },
+    {
+      "number": 3,
+      "name": "Conversion",
+      "icon": "arrow-right",
+      "color": "#1e293b",
+      "phase_color": "#1e40af",
+      "buyer_question": "Is it obvious and effortless to move forward with a purchase?",
+      "subtitle": "Making Buying Simple & Easy"
+    },
+    {
+      "number": 4,
+      "name": "Retention",
+      "icon": "refresh",
+      "color": "#1e293b",
+      "phase_color": "#1e3a5f",
+      "buyer_question": "Does this brand give me a reason to come back?",
+      "subtitle": "Get Buyers Coming Back"
+    }
+  ],
+  "awareness": {
+    "intro": {
+      "callout": "This phase is all about your first impression. If you lose them here, the rest of your website never gets a chance to do its job.",
+      "heading": "The impact of a strong first impression:",
+      "body": "When it comes to making a great first impression, you really don't get a second chance. Think about it: buyers will take just a few seconds to glance at your homepage and decide if they want to stick around. If they can't quickly understand what you do or what you offer, they won't spend time trying to figure it out. Instead, they'll likely just open a new tab and move on, missing out on the chance to learn about your products, offers, and brand story. A lackluster first impression can not only confuse potential customers but can also limit your audience right from the start.",
+      "warning": "When clarity is missing, buyers don't assume anything is wrong. They simply assume your brand not for them."
+    },
+    "audit_tables": [
+      {
+        "question": "What do you sell and why should buyers care?",
+        "rows": [
+          {
+            "text": "Does the headline tell me exactly what you sell and why buyers should care?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Is a buyer-relevant problem or frustration mentioned in the subheadline?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "On the homepage, does the main image show your products being used in a relatable, real-world context that reinforces the brand promise?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the homepage provide a clear reason to trust the brand before asking for a click (e.g., credentials, scale, longevity, or proof of seriousness)?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the homepage avoid long uninterrupted blocks of text without visual breaks which can cause users to miss important information?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Above the fold, the visual hierarchy makes the headline and primary CTA the most dominant elements, with no competing blocks that distract from the first click",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "On mobile, does the homepage use clear headers, spacing, and visual hierarchy to guide users through the content?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "If a search yields zero results, does it suggest best sellers?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "As the user scrolls, is there a clear next action presented again (secondary CTA), not just at the very top?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      },
+      {
+        "question": "Can shoppers trust you?",
+        "rows": [
+          {
+            "text": "Does the homepage become usable within 3 seconds, with no major layout shifts or delays?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "If applicable, is a bold risk-reversal (e.g., 'Money-Back Guarantee') prominently visible instead of buried in the footer?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "An aggregate star rating (e.g., \"4.8/5 Stars\") or social proof (Used by 5,000+ people) is visible near the top of the home page.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Is the best-selling product clearly identified with a visible \u201cBest Seller\u201d tag or badge on the product page or collection view?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Buyers can quickly find your return policy, privacy policy, and terms and conditions",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Do buyers have a clear and easy way to contact the company for questions, comments, concerns, or order information?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The meta description clearly explains what your business does",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The page title includes your brand name so buyers recognize it",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the link preview image match the visual brand identity found in the website's hero section?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      },
+      {
+        "question": "Can people find what they want fast?",
+        "rows": [
+          {
+            "text": "A \"Quick Add\" button is available on all product collection grid images so users don't have to load a new page to begin a conversion.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Collection pages default to a helpful sort order (Best Sellers, Top Rated, Newest)",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Collection page filters are easy to find and use on mobile without covering the screen or hiding options and include a visible results count and clear filter state",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Top-level navigation is limited to 7 items or fewer to avoid \"choice paralysis.\"",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "A search function (icon or bar) is accessible in the header on both desktop and mobile.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The CTA button passes WCAG 2.1 AA color contrast ratio of 4.5:1 or higher for accessibility",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "On mobile, does a sticky primary call to action stay visible as users scroll, allowing them to move forward without scrolling back up?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On mobile, does a sticky header keep navigation accessible as users scroll, making it easy to move between pages?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "When browsing collections or products, can users clearly see where they are and easily go back to the previous category or page?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "404 Check: Does the site have a \"Continue Shopping\" button on its 404 page?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      }
+    ],
+    "rating": {
+      "categories": [
+        {
+          "name": "Clear Offer and Value Proposition",
+          "score": 80
+        },
+        {
+          "name": "Clear Target Audience Fit",
+          "score": 70
+        },
+        {
+          "name": "Clear Next Step Direction",
+          "score": 85
+        },
+        {
+          "name": "Visuals and Context Support Products",
+          "score": 90
+        },
+        {
+          "name": "Simple and Intuitive Navigation",
+          "score": 75
+        }
+      ],
+      "overall_score": 87,
+      "max_score": 100,
+      "recommended_changes": "long on last page of audit",
+      "touchpoints_passed": null,
+      "points_earned": 0,
+      "points_possible": 28,
+      "summary": "Filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section."
+    }
+  },
+  "consideration": {
+    "intro": {
+      "callout": "This stage creates confidence and moves buyers forward either toward buying your product or exploring other options",
+      "heading": "The impact of strong social proof",
+      "body": "When buyers reach the Consideration stage, they begin weighing whether your offer is truly worth their time. At this point, your product pages need to do a great job of clearing up any uncertainties. It's all about showcasing the value of what you're offering and helping potential customers feel confident that choosing you is the right move. If this part of the process isn't strong, it's not that buyers aren't interested; they just don't feel convinced yet. Even a small gap in clarity can be a big problem, affecting your sales long before you see the numbers reflected in your analytics.",
+      "warning": "Most buyers are already interested. They just need a reason to believe your brand is the best option for them."
+    },
+    "audit_tables": [
+      {
+        "question": "Are your product pages clear and helpful?",
+        "rows": [
+          {
+            "text": "At a quick glance, does the product page clearly communicate what the best-selling product is and why it matters without requiring detailed reading?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Are trust signals (such as star ratings or review counts) placed near the price or primary call to action where the buying decision is made?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the page clearly describe the 'ideal user' and the specific situation where this product works best?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Technical details are easy to find in a dedicated section such as accordion tabs or specs, and are not buried inside long paragraphs",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On the product page, are images aligned with the product\u2019s intended real-life use or setting to help users visualize the application?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Choosing a color, size, or variant visibly updates the product image to reflect the selection.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "A clear how to use section with steps is visible on the product page.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Can a buyer visually evaluate the physical quality of the product before buying?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The product is shown next to a scale reference or on a model with listed height/size to confirm dimensions.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Are the product\u2019s dimensions or sizing clearly visible on the product page?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On mobile, are key product details easy to scan quickly without requiring sustained reading or excessive scrolling?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          }
+        ]
+      },
+      {
+        "question": "Do reviews and proof help people feel sure about buying your products?",
+        "rows": [
+          {
+            "text": "Does the product description explicitly name the buyer\u2019s problem or frustration it solves, instead of only describing the product itself?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Do the customer reviews specifically mention the same benefits or results that are promised in the product description?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Are trust signals such as reviews, ratings, or customer counts placed near primary CTAs or pricing where buying decisions are made?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Collection page product cards show key purchase signals (price, star rating, top benefit) so buyers can choose faster.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Individual reviews include a \"Verified Buyer\" badge to objectively distinguish authentic feedback from general comments.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the page feature at least one strong customer testimonial or example near key decision points that reinforces the product\u2019s promised outcome?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Do reviews make it easy for buyers to find examples from people with similar needs (through photos, review highlights, or clear themes)?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the page include real-world or in-use visuals that help validate the product\u2019s claims and reduce uncertainty before purchase?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the product page include an image gallery with multiple product views to reduce buyer uncertainty?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      },
+      {
+        "question": "Do you help shoppers buy more or find backups?",
+        "rows": [
+          {
+            "text": "Is it easy for shoppers to increase quantity directly on the product page without friction or confusion?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the main imagery show the specific result or 'after-state' the customer achieves by using the product?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "A \"Frequently Bought Together\" or \"Bundle & Save\" widget is present to increase Average Order Value (AOV).",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "A visual comparison table is present to show the benefits against generic or competitor alternatives.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the product page offer a clear option for subscriptions, replenishment, or long-term renewals that shoppers can add with minimal effort?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The page proactively answers buyer questions about fit, sizing, compatibility, or expectations with an FAQ or similar section",
+            "pass": null,
+            "fix_type": "Overhaul"
+          }
+        ]
+      }
+    ],
+    "rating": {
+      "categories": [
+        {
+          "name": "Customer Reviews and Stories",
+          "score": 75
+        },
+        {
+          "name": "Proof Backing Claims Being Made",
+          "score": 65
+        },
+        {
+          "name": "Clear Use Case For Target Audience",
+          "score": 80
+        },
+        {
+          "name": "Authority and Credibility Signals",
+          "score": 70
+        },
+        {
+          "name": "Guarantees or \"Risk Reducers\"",
+          "score": 60
+        }
+      ],
+      "overall_score": 87,
+      "max_score": 100,
+      "recommended_changes": "long on last page of audit",
+      "touchpoints_passed": null,
+      "points_earned": 0,
+      "points_possible": 26,
+      "summary": "Filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section."
+    }
+  },
+  "conversion": {
+    "intro": {
+      "callout": "This stage removes friction from the buying process or turns ready buyers into hesitant ones",
+      "heading": "The simpler the checkout, the easier the sale:",
+      "body": "By the time buyers get to the Conversion stage, they've already made up their minds that your product is worth it. Now, their focus shifts from what they're buying to how easy it is to get through the final steps. If there's any delay, extra decision to make, or confusing screen, it can really throw them off and turn an eager buyer into someone who hesitates. The smoother and quicker the whole experience feels, the more likely people are to follow through and complete the purchase.",
+      "warning": "Buyers don't stop wanting your product. They leave checkouts when the process feels too slow or difficult."
+    },
+    "audit_tables": [
+      {
+        "question": "Is your cart easy to use and interactive?",
+        "rows": [
+          {
+            "text": "After adding to cart, the page clearly confirms success (e.g., animation, mini-cart, or confirmation message).",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "When product quantities are updated in the cart, the subtotal and item count adjust automatically.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Does the cart or checkout clearly show delivery timing or shipping estimates?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "The mini-cart or cart page offers 1-click \"Frequently Bought Together\" additions to increase order size before the final checkout.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Does the cart or checkout clearly link to return or cancellation policies before purchase?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "The mini-cart shows a spend-based progress message (e.g., \u201c$10 to free shipping\u201d) that updates as items are added.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Does the cart offer optional gift or personalization options without interrupting checkout flow?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      },
+      {
+        "question": "Is checkout quick and simple?",
+        "rows": [
+          {
+            "text": "All fees (e.g., tax, shipping) are shown before the final checkout screen.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "The checkout page loads without delay and is visually stable within 3 seconds.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "The payment page includes a persistent summary showing product, quantity, and total cost. including shipping",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Can a user reach the shipping info screen without being forced to create a password or 'Sign In'?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "Express payment buttons (e.g., Apple Pay, ShopPay, Google Pay) are loaded at the top of the checkout to enable \"2-click\" purchasing.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Are trust signals like \u2018Secure Checkout,\u2019 lock icons, or payment logos shown near credit card fields?",
+            "pass": null,
+            "fix_type": "Overhaul"
+          },
+          {
+            "text": "When returning to the site, buyers still see previously added items in their cart.",
+            "pass": null,
+            "fix_type": "Quick Win"
+          }
+        ]
+      },
+      {
+        "question": "Is checkout easy on a phone?",
+        "rows": [
+          {
+            "text": "On mobile, the primary checkout button is placed within reach (e.g., bottom half of screen or fixed to bottom).",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On mobile, can shoppers move through checkout without needing to constantly scroll to find the next step?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "Mobile checkout fields support browser autofill (e.g., address or contact info).",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On mobile, are checkout actions large, clearly labeled, and easy to tap without accidental clicks?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "On mobile, does the checkout experience stay focused on completing the purchase without pop-ups or unnecessary distractions?",
+            "pass": null,
+            "fix_type": "Quick Win"
+          },
+          {
+            "text": "If a field is missed, the form shows the error clearly, instantly, and scrolls the user back to the problem area.",
+            "pass": null,
+            "fix_type": "Overhaul"
+          }
+        ]
+      }
+    ],
+    "rating": {
+      "categories": [
+        {
+          "name": "Primary Call-to-Action Strength",
+          "score": 85
+        },
+        {
+          "name": "Checkout Process Simplicity",
+          "score": 70
+        },
+        {
+          "name": "Pricing and Cost Transparency",
+          "score": 80
+        },
+        {
+          "name": "Frictionless Form & Field Experience",
+          "score": 75
+        },
+        {
+          "name": "Technical Performance and Reliability",
+          "score": 90
+        }
+      ],
+      "overall_score": 87,
+      "max_score": 100,
+      "recommended_changes": "long on last page of audit",
+      "touchpoints_passed": null,
+      "points_earned": 0,
+      "points_possible": 20,
+      "summary": "Filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section/filler text goes here, make this a good looking box where I can fill in my notes of the section. This section will fill approximately 3-5 sentences of a summary of the notes and findings from analyzing the section."
+    }
+  },
+  "retention": {
+    "intro": {
+      "callout": "Retention decides whether your business compounds as you grow, or starts from zero every month.",
+      "heading": "Retention is the engine to long term growth:",
+      "body": "The first purchase isn't the endgame; it's just the beginning. When someone makes that initial buy, they have two paths: they might fade away, or they might become a loyal supporter who boosts your revenue without you needing to spend more on ads. Acquiring customers requires your time, effort, and money, but building strong relationships with them maximizes the value of what you've already invested. It's like taking the energy you used to win them over and transforming it into ongoing momentum that doesn't cost you anything extra. A business that focuses on keeping its customers tends to grow steadily and predictably, while one that struggles with retention finds itself starting over each month.",
+      "warning": "Most growth problems aren't traffic problems. They're retention problems that compound over time."
+    },
+    "score": "N/A",
+    "score_note": "Not analyzed."
+  },
+  "billion_dollar_retention": {
+    "title": "Billion Dollar",
+    "subtitle": "How top brands turn buyers into lifetime customers",
+    "top_flow": [
+      "First Purchase Completed",
+      "Order Confirmation + Brand Introduction",
+      "Post-Purchase Check-in SMS or Email"
+    ],
+    "top_flow_side": "Usage Education Or Testimonials",
+    "bottom_flow": [
+      "Win-Back Flow For Non-Re-Purchasers",
+      "Repeat Purchase or Referral Push",
+      "Relevant Upsell or Cross-Sell Offered"
+    ],
+    "what_most_brands_do": [
+      "First Purchase Completed",
+      "Basic Order Tracking Info",
+      "Add to Basic Mailing List",
+      "Hope Buyers Purchase Again"
+    ],
+    "the_results": [
+      "Buyers forget about your brand",
+      "Repeat purchases drop off",
+      "Average order value stays low",
+      "Fewer reviews and referrals",
+      "Revenue depends on traffic",
+      "Lifetime customer value plateaus"
+    ]
+  },
+  "core_revenue_flows": {
+    "heading_note": "These flows prevent revenue from slipping through the cracks. Missing even one flow loses you potential revenue.",
+    "flows": [
+      {
+        "name": "Checkout Recovery Flow",
+        "description": "Recovers sales from buyers who started checkout but didn't finish."
+      },
+      {
+        "name": "Cart Abandonment Recovery Flow",
+        "description": "Brings back shoppers who added items but left before purchasing."
+      },
+      {
+        "name": "Browse Abandonment Recovery Flow",
+        "description": "Re-engages visitors who viewed products but didn't take action."
+      },
+      {
+        "name": "Post Purchase Flow",
+        "description": "Increases repeat purchases by staying in front of customers after they buy."
+      },
+      {
+        "name": "Welcome Flow",
+        "description": "Builds trust with new opt-in subscribers so they feel confident buying."
+      },
+      {
+        "name": "Win Back Flow",
+        "description": "Reactivates past customers who haven't purchased in a while."
+      },
+      {
+        "name": "Upsell Flow",
+        "description": "Increases average order value with relevant follow-up offers."
+      },
+      {
+        "name": "Review Capture Flow",
+        "description": "Prompts customers to leave reviews post-purchase."
+      }
+    ]
+  },
+  "performance_summary": {
+    "title": "Storefront Report Card",
+    "awareness": {
+      "score": 92,
+      "note": "Strong first impression with clear positioning"
+    },
+    "consideration": {
+      "score": 85,
+      "note": "Trust signals present, proof could go deeper"
+    },
+    "conversion": {
+      "score": 72,
+      "note": "Friction and hesitation reduce completed actions"
+    },
+    "retention": {
+      "score": "N/A",
+      "note": "Not analyzed."
+    },
+    "final_thoughts": "filler text with detailed writeup goes hereRationale: First-time visitors scan your homepage in seconds. If your headline doesn't immediately anchor them with clarity and relevance, they mentally bounce. Ambiguous or clever language confuses instead of converting. filler text with detailed writeup goes hereRationale: First-time visitors scan your homepage in seconds. If your headline doesn't immediately anchor them with clarity and relevance, they mentally bounce. Ambiguous or clever language confuses instead of converting."
+  },
+  "recommended_changes": [
+    {
+      "number": 1,
+      "title": "Rewrite Your Hero Headline to Answer: \"What is this and why should I care?\"",
+      "rationale": "First-time visitors scan your homepage in seconds. If your headline doesn't immediately anchor them with clarity and relevance, they mentally bounce. Ambiguous or clever language confuses instead of converting.",
+      "fix": "Rewrite the hero headline to clearly state what the product is, who it's for, and what outcome it drives (e.g., \"Clean Skincare for Acne-Prone Skin \u2014 see Results in 7 Days\")."
+    },
+    {
+      "number": 2,
+      "title": "Remove Distractions Above the Fold and Highlight One Primary CTA",
+      "rationale": "Cognitive overload occurs when multiple CTAs, conflicting visuals, or weak visual hierarchy compete for attention. When buyers don't know where to click, they click nothing.",
+      "fix": "Strip back clutter above the fold. Make one the headline, product image, and primary CTA the only dominant elements. Secondary links should move below the fold."
+    },
+    {
+      "number": 3,
+      "title": "Add Star Rating + \"Used by X Customers\" Near Add-to-Cart",
+      "rationale": "Buyers rely on social proof as a shortcut for decision-making. Without visual signals like ratings or usage stats, they subconsciously assume your product is unproven.",
+      "fix": "Rewrite the hero headline to clearly state what the product is, who it's for, and what outcome it drives (e.g., \"Clean Skincare for Acne-Prone Skin \u2014 see Results in 7 Days\")."
+    },
+    {
+      "number": 4,
+      "title": "Add a Persistent Cart Summary in Checkout",
+      "rationale": "During checkout, hidden or unclear totals cause uncertainty. When buyers can't quickly verify what they're paying for, they hesitate, abandon, or go back to re-check.",
+      "fix": "Add a fixed cart summary sidebar (desktop) or sticky banner (mobile) that always shows product image, quantity, total cost, shipping, and estimated delivery."
+    }
+  ],
+  "change_log_table": [
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    },
+    {
+      "item": "",
+      "impact": ""
+    }
+  ],
+  "revenue_calculator": {
+    "title": "Estimate How Much Revenue Your Store Could Recover Each Month",
+    "steps": [
+      "Choose between retention or conversion calculator",
+      "Input your store metrics into the fields",
+      "Get a revenue recovery diagnostic in 15 seconds"
+    ],
+    "cta_title": "Free Lost Revenue Estimator Tool",
+    "cta_description": "Adjust your numbers to see how small conversion improvements could unlock major revenue."
+  },
+  "cta_section": {
+    "headline": "We'll Implement All Changes On Your Storefront in 14 Days",
+    "benefits": [
+      "One Fixed Price",
+      "No Hidden Fees or Charges",
+      "No Monthly Retainers",
+      "No Long Term Contracts",
+      "Performance Or You Don't Pay",
+      "Completed in 14 Days Or Less",
+      "Storefront Access Required",
+      "Fully Customized To Your Brand"
+    ],
+    "guarantee": "If your conversion rate doesn't increase in 30 days, you don't pay"
+  }
+}
