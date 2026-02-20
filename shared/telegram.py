@@ -32,7 +32,7 @@ def send_telegram_message(
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
 
     payload = {
-        "chat_id": chat_id,
+        "chat_id": str(chat_id),
         "text": message,
     }
 
@@ -43,6 +43,11 @@ def send_telegram_message(
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
         return True
+    except requests.exceptions.HTTPError as e:
+        logger.warning(f"Failed to send Telegram message: {e}")
+        if hasattr(e.response, "text"):
+            logger.warning(f"Telegram API response: {e.response.text}")
+        return False
     except Exception as e:
         logger.warning(f"Failed to send Telegram message: {e}")
         return False

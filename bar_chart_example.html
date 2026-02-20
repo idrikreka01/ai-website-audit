@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Report - Bar Chart Categories</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chart-container {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #333;
+        }
+        .category-stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audit Report - Bar Chart Categories</h1>
+    
+    <div class="chart-container">
+        <canvas id="barChart"></canvas>
+    </div>
+
+    <div id="categoryStats"></div>
+
+    <script>
+        // Example: Replace this with your actual JSON response from the API
+        const reportData = {
+            "questions": [
+                {
+                    "question_id": 73,
+                    "bar_chart_category": "Clear Offer and Value Proposition",
+                    "result": "fail"
+                },
+                {
+                    "question_id": 77,
+                    "bar_chart_category": "Clear Offer and Value Proposition",
+                    "result": "fail"
+                },
+                {
+                    "question_id": 122,
+                    "bar_chart_category": "Pricing and Cost Transparency",
+                    "result": "pass"
+                }
+                // ... more questions
+            ]
+        };
+
+        // Step 1: Use weighted scores from API (if available) or calculate manually
+        function getCategoryScores(reportData) {
+            // If category_scores already exist in report, use them (pre-calculated with weights)
+            if (reportData.category_scores && reportData.category_scores.length > 0) {
+                return reportData.category_scores.map(cat => ({
+                    category: cat.category,
+                    score: cat.score,
+                    totalQuestions: cat.total_questions,
+                    totalWeight: cat.total_weight
+                }));
+            }
+            
+            // Otherwise calculate manually with weights
+            const tierWeights = { 1: 3, 2: 2, 3: 1 };
+            const categories = {};
+            
+            reportData.questions.forEach(q => {
+                const category = q.bar_chart_category || 'Unknown';
+                
+                if (!categories[category]) {
+                    categories[category] = {
+                        weightedScore: 0,
+                        totalWeight: 0,
+                        pass: 0,
+                        fail: 0,
+                        total: 0
+                    };
+                }
+                
+                const tier = q.tier || 1;
+                const severity = q.severity || 1;
+                const tierWeight = tierWeights[tier] || 1;
+                const severityWeight = severity;
+                const combinedWeight = tierWeight * severityWeight;
+                
+                const questionScore = q.result === 'pass' ? 1.0 : 0.0;
+                const weightedScore = combinedWeight * questionScore;
+                
+                categories[category].weightedScore += weightedScore;
+                categories[category].totalWeight += combinedWeight;
+                categories[category].total++;
+                
+                if (q.result === 'pass') {
+                    categories[category].pass++;
+                } else {
+                    categories[category].fail++;
+                }
+            });
+            
+            return Object.keys(categories).map(category => {
+                const data = categories[category];
+                const score = data.totalWeight > 0 
+                    ? (data.weightedScore / data.totalWeight) * 100 
+                    : 0;
+                
+                return {
+                    category: category,
+                    score: parseFloat(score.toFixed(2)),
+                    totalQuestions: data.total,
+                    totalWeight: parseFloat(data.totalWeight.toFixed(2)),
+                    pass: data.pass,
+                    fail: data.fail
+                };
+            }).sort((a, b) => b.score - a.score);
+        }
+
+        // Step 2: Create bar chart with weighted scores
+        function createBarChart(categoryData) {
+            const ctx = document.getElementById('barChart').getContext('2d');
+            
+            // Color based on score: green (80+), yellow (50-79), red (<50)
+            const getColor = (score) => {
+                if (score >= 80) return 'rgba(40, 167, 69, 0.7)'; // Green
+                if (score >= 50) return 'rgba(255, 193, 7, 0.7)';  // Yellow
+                return 'rgba(220, 53, 69, 0.7)'; // Red
+            };
+            
+            const getBorderColor = (score) => {
+                if (score >= 80) return 'rgba(40, 167, 69, 1)';
+                if (score >= 50) return 'rgba(255, 193, 7, 1)';
+                return 'rgba(220, 53, 69, 1)';
+            };
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: categoryData.map(c => c.category),
+                    datasets: [
+                        {
+                            label: 'Weighted Score %',
+                            data: categoryData.map(c => c.score),
+                            backgroundColor: categoryData.map(c => getColor(c.score)),
+                            borderColor: categoryData.map(c => getBorderColor(c.score)),
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const category = categoryData[context.dataIndex];
+                                    return [
+                                        `Score: ${category.score}% (weighted by tier & severity)`,
+                                        `Questions: ${category.totalQuestions}`,
+                                        `Pass: ${category.pass || 0}, Fail: ${category.fail || 0}`,
+                                        `Total Weight: ${category.totalWeight}`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Step 3: Display category statistics
+        function displayCategoryStats(categoryData) {
+            const container = document.getElementById('categoryStats');
+            let html = '<h2>Category Breakdown (Weighted by Tier & Severity)</h2>';
+            html += '<p><em>Weighting: Tier 1=3x, Tier 2=2x, Tier 3=1x × Severity (1-5)</em></p>';
+            
+            categoryData.forEach(cat => {
+                const scoreColor = cat.score >= 80 ? '#28a745' : cat.score >= 50 ? '#ffc107' : '#dc3545';
+                html += `
+                    <div class="category-stats">
+                        <h3>${cat.category}</h3>
+                        <p><strong style="color: ${scoreColor};">Weighted Score: ${cat.score}%</strong></p>
+                        <p><strong>Total Questions:</strong> ${cat.totalQuestions}</p>
+                        <p><strong>Pass:</strong> ${cat.pass || 0}, <strong>Fail:</strong> ${cat.fail || 0}</p>
+                        <p><strong>Total Weight:</strong> ${cat.totalWeight}</p>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        // Main execution
+        const categoryData = getCategoryScores(reportData);
+        
+        createBarChart(categoryData);
+        displayCategoryStats(categoryData);
+    </script>
+</body>
+</html>

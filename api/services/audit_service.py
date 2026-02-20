@@ -11,17 +11,21 @@ from typing import Optional
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
+from sqlalchemy import select
+
 from api.job_queue import enqueue_audit_job
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
     ArtifactResponse,
     AuditPageResponse,
     AuditQuestionResponse,
+    AuditResultResponse,
     AuditSessionResponse,
     CreateAuditQuestionRequest,
     CreateAuditResponse,
     UpdateAuditQuestionRequest,
 )
+from shared.db import get_audit_questions_table
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -206,8 +210,12 @@ class AuditService:
             cart_ok=session_data.get("cart_ok", False),
             checkout_ok=session_data.get("checkout_ok", False),
             page_coverage_score=session_data.get("page_coverage_score", 0),
+            ai_audit_score=session_data.get("ai_audit_score"),
+            ai_audit_flag=session_data.get("ai_audit_flag"),
             functional_flow_score=session_data.get("functional_flow_score", 0),
             functional_flow_details=session_data.get("functional_flow_details"),
+            overall_score_percentage=session_data.get("overall_score_percentage"),
+            needs_manual_review=session_data.get("needs_manual_review", False),
             pages=pages,
         )
 
@@ -260,40 +268,51 @@ class AuditService:
 
         Returns the created question.
         """
-        question_data = self.repository.create_question(
-            key=request.key,
-            stage=request.stage,
-            category=request.category,
-            page_type=request.page_type,
-            narrative_tier=request.narrative_tier,
-            baseline_severity=request.baseline_severity,
-            question_text=request.question_text,
-            allowed_evidence_types=request.allowed_evidence_types,
-            ruleset_version=request.ruleset_version,
-            fix_intent=request.fix_intent,
-            specific_example_fix_text=request.specific_example_fix_text,
-            pass_criteria=request.pass_criteria,
-            fail_criteria=request.fail_criteria,
-            notes=request.notes,
+        questions_table = get_audit_questions_table()
+
+        insert_stmt = (
+            questions_table.insert()
+            .values(
+                category=request.category,
+                question=request.question,
+                ai_criteria=request.ai_criteria,
+                tier=request.tier,
+                severity=request.severity,
+                bar_chart_category=request.bar_chart_category,
+                exact_fix=request.exact_fix,
+                page_type=request.page_type,
+            )
+            .returning(questions_table.c.question_id)
         )
+
+        result = self.repository.session.execute(insert_stmt)
+        question_id = result.scalar_one()
+        self.repository.session.flush()
+
+        select_stmt = select(questions_table).where(questions_table.c.question_id == question_id)
+        row = self.repository.session.execute(select_stmt).one()
+        question_data = dict(row._mapping)
 
         logger.info(
             "audit_question_created",
-            question_id=str(question_data["id"]),
-            key=question_data["key"],
+            question_id=question_id,
+            category=request.category,
         )
 
         return AuditQuestionResponse(**question_data)
 
-    def get_question(self, question_id: UUID) -> Optional[AuditQuestionResponse]:
+    def get_question(self, question_id: int) -> Optional[AuditQuestionResponse]:
         """
         Get an audit question by ID.
 
         Returns None if not found.
         """
-        question_data = self.repository.get_question_by_id(question_id)
-        if question_data is None:
+        questions_table = get_audit_questions_table()
+        stmt = select(questions_table).where(questions_table.c.question_id == question_id)
+        result = self.repository.session.execute(stmt).first()
+        if result is None:
             return None
+        question_data = dict(result._mapping)
         return AuditQuestionResponse(**question_data)
 
     def list_questions(
@@ -307,17 +326,31 @@ class AuditService:
         List audit questions with optional filters.
 
         Returns a list of questions.
+        Note: stage parameter maps to category (Awareness/Consideration/Conversion).
         """
-        questions_data = self.repository.list_questions(
-            stage=stage,
-            page_type=page_type,
-            category=category,
-        )
+        questions_table = get_audit_questions_table()
+        stmt = select(questions_table)
+
+        conditions = []
+        category_filter = stage if stage is not None else category
+        if category_filter is not None:
+            conditions.append(questions_table.c.category == category_filter)
+        if page_type is not None:
+            conditions.append(questions_table.c.page_type == page_type)
+
+        if conditions:
+            from sqlalchemy import and_
+
+            stmt = stmt.where(and_(*conditions))
+
+        stmt = stmt.order_by(questions_table.c.question_id)
+        results = self.repository.session.execute(stmt).all()
+        questions_data = [dict(row._mapping) for row in results]
         return [AuditQuestionResponse(**q) for q in questions_data]
 
     def update_question(
         self,
-        question_id: UUID,
+        question_id: int,
         request: UpdateAuditQuestionRequest,
     ) -> Optional[AuditQuestionResponse]:
         """
@@ -325,47 +358,96 @@ class AuditService:
 
         Returns the updated question, or None if not found.
         """
-        question_data = self.repository.update_question(
-            question_id,
-            stage=request.stage,
-            category=request.category,
-            page_type=request.page_type,
-            narrative_tier=request.narrative_tier,
-            baseline_severity=request.baseline_severity,
-            question_text=request.question_text,
-            allowed_evidence_types=request.allowed_evidence_types,
-            ruleset_version=request.ruleset_version,
-            fix_intent=request.fix_intent,
-            specific_example_fix_text=request.specific_example_fix_text,
-            pass_criteria=request.pass_criteria,
-            fail_criteria=request.fail_criteria,
-            notes=request.notes,
+        questions_table = get_audit_questions_table()
+
+        update_values = {}
+        if request.category is not None:
+            update_values["category"] = request.category
+        if request.question is not None:
+            update_values["question"] = request.question
+        if request.ai_criteria is not None:
+            update_values["ai_criteria"] = request.ai_criteria
+        if request.tier is not None:
+            update_values["tier"] = request.tier
+        if request.severity is not None:
+            update_values["severity"] = request.severity
+        if request.bar_chart_category is not None:
+            update_values["bar_chart_category"] = request.bar_chart_category
+        if request.exact_fix is not None:
+            update_values["exact_fix"] = request.exact_fix
+        if request.page_type is not None:
+            update_values["page_type"] = request.page_type
+
+        if not update_values:
+            return self.get_question(question_id)
+
+        update_stmt = (
+            questions_table.update()
+            .where(questions_table.c.question_id == question_id)
+            .values(**update_values)
         )
+        self.repository.session.execute(update_stmt)
+        self.repository.session.flush()
 
-        if question_data is None:
-            return None
+        logger.info("audit_question_updated", question_id=question_id)
 
-        logger.info("audit_question_updated", question_id=str(question_id))
+        return self.get_question(question_id)
 
-        return AuditQuestionResponse(**question_data)
-
-    def delete_question(self, question_id: UUID) -> bool:
+    def delete_question(self, question_id: int) -> bool:
         """
         Delete an audit question by ID.
 
         Returns True if deleted, False if not found.
         """
-        deleted = self.repository.delete_question(question_id)
-        if deleted:
-            logger.info("audit_question_deleted", question_id=str(question_id))
-        return deleted
+        questions_table = get_audit_questions_table()
 
-    # TODO: Implement new audit_results methods using AuditResultResponse schema
-    # def get_results_by_session(self, session_id: str) -> list[AuditResultResponse]:
-    #     ...
-    #
-    # def get_results_by_question(self, question_id: int) -> list[AuditResultResponse]:
-    #     ...
-    #
-    # def get_result(self, result_id: int) -> Optional[AuditResultResponse]:
-    #     ...
+        check_stmt = select(questions_table).where(questions_table.c.question_id == question_id)
+        exists = self.repository.session.execute(check_stmt).first() is not None
+
+        if not exists:
+            return False
+
+        delete_stmt = questions_table.delete().where(questions_table.c.question_id == question_id)
+        self.repository.session.execute(delete_stmt)
+        self.repository.session.flush()
+
+        logger.info("audit_question_deleted", question_id=question_id)
+        return True
+
+    def get_results_by_session(self, session_id: UUID) -> list[AuditResultResponse]:
+        """
+        Get all audit results for a session.
+
+        Returns a list of results.
+        """
+        from urllib.parse import urlparse
+
+        session_data = self.repository.get_session_by_id(session_id)
+        if not session_data:
+            return []
+
+        domain = urlparse(session_data.get("url", "")).netloc.replace("www.", "")
+        session_id_str = f"{domain}__{session_id}"
+
+        results_data = self.repository.get_audit_results_by_session_id(session_id_str)
+        return [AuditResultResponse(**r) for r in results_data]
+
+    def get_results_by_question(self, question_id: int) -> list[AuditResultResponse]:
+        """
+        Get all audit results for a specific question.
+
+        Returns a list of results.
+        """
+        results_data = self.repository.get_audit_results_by_question_id(question_id)
+        return [AuditResultResponse(**r) for r in results_data]
+
+    def get_result(self, result_id: int) -> Optional[AuditResultResponse]:
+        """
+        Get a single audit result by ID.
+
+        Returns the result, or None if not found.
+        """
+        result_data = self.repository.get_audit_result_by_id(result_id)
+        if result_data is None:
+            return None
+        return AuditResultResponse(**result_data)

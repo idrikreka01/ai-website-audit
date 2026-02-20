@@ -18,11 +18,11 @@ def upgrade() -> None:
         "audit_results",
         sa.Column("confidence_score", sa.Integer(), nullable=True),
     )
-    
+
     op.execute("UPDATE audit_results SET confidence_score = 5 WHERE confidence_score IS NULL")
-    
+
     op.alter_column("audit_results", "confidence_score", nullable=False)
-    
+
     op.create_check_constraint(
         "ck_audit_results_confidence_score",
         "audit_results",

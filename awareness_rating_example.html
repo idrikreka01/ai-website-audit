@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Awareness Rating Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .awareness-rating-section {
+            margin: 30px 0;
+        }
+        .section-title {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .category-rating {
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+        }
+        .category-label {
+            display: inline-block;
+            background: #f0f0f0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-right: 10px;
+            min-width: 250px;
+            font-size: 14px;
+        }
+        .progress-bar-container {
+            flex: 1;
+            height: 30px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            position: relative;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(to right, #1e3a8a, #3b82f6);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 8px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            transition: width 0.3s ease;
+        }
+        .overall-score-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .overall-score-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        .score-cards {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .score-card {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .score-card-primary {
+            background: #1e3a8a;
+            color: white;
+        }
+        .score-card-secondary {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+        }
+        .score-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .score-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audit Report - Stage Ratings</h1>
+    
+    <div>
+        <label>Session ID: </label>
+        <input type="text" id="sessionId" placeholder="f897f03f-7404-443a-b497-3a9421463c16" style="width: 400px;">
+        <button onclick="loadReport()">Load Report</button>
+    </div>
+    
+    <div id="stageRatings"></div>
+
+    <script>
+        async function loadReport() {
+            const sessionId = document.getElementById('sessionId').value.trim();
+            if (!sessionId) {
+                alert('Please enter a session ID');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`http://localhost:8000/audits/${sessionId}/report`);
+                const data = await response.json();
+                displayAwarenessRating(data);
+            } catch (error) {
+                console.error('Error loading report:', error);
+            }
+        }
+        
+        function displayStageRating(data, stageName) {
+            const stageKey = stageName.toLowerCase();
+            const stageDisplayName = stageName.charAt(0).toUpperCase() + stageName.slice(1);
+            
+            // Get stage data
+            const stageCategories = data.category_scores_by_stage?.[stageKey] || [];
+            const stageScore = data.stage_scores?.[stageKey] || 0;
+            
+            // Get stage description from storefront report card
+            const stageDescription = data.storefront_report_card?.stage_descriptions?.[stageKey] || '';
+            
+            // Count actionable findings for this stage's categories
+            const stageCategoryNames = stageCategories.map(c => c.category);
+            const stageFindings = data.actionable_findings?.filter(f => 
+                stageCategoryNames.includes(f.category)
+            ) || [];
+            
+            // Count touchpoints passed for this stage
+            const stageQuestions = data.questions?.filter(q => q.category === stageDisplayName) || [];
+            const stagePassed = stageQuestions.filter(q => q.result === 'pass').length;
+            const stageTotal = stageQuestions.length;
+            
+            let html = `
+                <div class="awareness-rating-section">
+                    <div class="section-title">Q ${stageDisplayName} Rating</div>
+            `;
+            
+            // Display category progress bars
+            stageCategories.forEach(cat => {
+                const score = Math.round(cat.score);
+                html += `
+                    <div class="category-rating">
+                        <span class="category-label">${cat.category}</span>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${score}%;">
+                                ${score}%
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            // Display overall score section with description
+            html += `
+                    <div class="overall-score-section">
+                        <div class="overall-score-title">Overall Score:</div>
+                        <div class="score-cards">
+                            <div class="score-card score-card-primary">
+                                <div class="score-label">${stageDisplayName} Score</div>
+                                <div class="score-value">${Math.round(stageScore)}/100</div>
+                                ${stageDescription ? `<div style="font-size: 12px; opacity: 0.9; margin-top: 5px;">${stageDescription}</div>` : ''}
+                            </div>
+                            <div class="score-card score-card-secondary">
+                                <div class="score-label">Recommended Changes</div>
+                                <div class="score-value" style="font-size: 24px; color: #333;">${stageFindings.length}</div>
+                            </div>
+                            <div class="score-card score-card-secondary">
+                                <div class="score-label">Touchpoints Passed</div>
+                                <div class="score-value" style="font-size: 24px; color: #333;">${stagePassed}/${stageTotal}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            return html;
+        }
+        
+        function displayAwarenessRating(data) {
+            let html = '';
+            
+            // Display all three stages
+            html += displayStageRating(data, 'Awareness');
+            html += displayStageRating(data, 'Consideration');
+            html += displayStageRating(data, 'Conversion');
+            
+            // Display Final Thoughts section
+            const finalThoughts = data.storefront_report_card?.final_thoughts;
+            if (finalThoughts) {
+                html += `
+                    <div class="awareness-rating-section" style="margin-top: 40px;">
+                        <div class="section-title">Final Thoughts</div>
+                        <div style="padding: 20px; background: #f9f9f9; border-radius: 8px; line-height: 1.6;">
+                            ${finalThoughts.split('\n').map(p => `<p style="margin: 10px 0;">${p}</p>`).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('stageRatings').innerHTML = html;
+        }
+        
+        // Load on page load if session ID in URL
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (sessionId) {
+                document.getElementById('sessionId').value = sessionId;
+                loadReport();
+            }
+        };
+    </script>
+</body>
+</html>

@@ -144,7 +144,7 @@ async def run_checkout_flow(
                 await wait_for_page_ready(page, soft_timeout=5000)
                 await dismiss_popups(page)
 
-                cart_navigated = await _navigate_to_cart(
+                cart_navigated, cart_load_timings = await _navigate_to_cart(
                     page, product_url, session_id, viewport, domain, repository
                 )
                 result["cart_navigation"]["status"] = "completed" if cart_navigated else "failed"
@@ -155,10 +155,10 @@ async def run_checkout_flow(
                     await dismiss_popups(page)
 
                     await _capture_page_payloads(
-                        page, "cart", session_id, viewport, domain, repository
+                        page, "cart", session_id, viewport, domain, repository, cart_load_timings
                     )
 
-                    checkout_navigated = await _navigate_to_checkout(
+                    checkout_navigated, checkout_load_timings = await _navigate_to_checkout(
                         page, product_url, session_id, viewport, domain, repository
                     )
                     result["checkout_navigation"]["status"] = (
@@ -171,7 +171,13 @@ async def run_checkout_flow(
                         await dismiss_popups(page)
 
                         await _capture_page_payloads(
-                            page, "checkout", session_id, viewport, domain, repository
+                            page,
+                            "checkout",
+                            session_id,
+                            viewport,
+                            domain,
+                            repository,
+                            checkout_load_timings,
                         )
         else:
             result["errors"].append("Add-to-cart button not found in analysis JSON")
@@ -971,11 +977,11 @@ async def _navigate_to_cart(
 
                 await elem.click(timeout=3000)
                 await asyncio.sleep(2)
-                await wait_for_page_ready(page, soft_timeout=5000)
+                load_timings = await wait_for_page_ready(page, soft_timeout=5000)
 
                 current_url = page.url.lower()
                 if "cart" in current_url or "basket" in current_url:
-                    return True
+                    return True, load_timings
         except Exception:
             continue
 
@@ -993,11 +999,12 @@ async def _navigate_to_cart(
                 domain=domain,
             )
             if nav_result.success:
-                return True
+                load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+                return True, load_timings
         except Exception:
             continue
 
-    return False
+    return False, {}
 
 
 async def _navigate_to_checkout(
@@ -1050,7 +1057,7 @@ async def _navigate_to_checkout(
 
                 await elem.click(timeout=5000)
                 await asyncio.sleep(2)
-                await wait_for_page_ready(page, soft_timeout=5000)
+                load_timings = await wait_for_page_ready(page, soft_timeout=5000)
 
                 current_url = page.url.lower()
                 if "checkout" in current_url:
@@ -1062,7 +1069,7 @@ async def _navigate_to_checkout(
                         viewport=viewport,
                         domain=domain,
                     )
-                    return True
+                    return True, load_timings
         except Exception as e:
             logger.debug(
                 "checkout_selector_failed",
@@ -1084,11 +1091,12 @@ async def _navigate_to_checkout(
             domain=domain,
         )
         if nav_result.success:
-            return True
+            load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+            return True, load_timings
     except Exception:
         pass
 
-    return False
+    return False, {}
 
 
 async def _capture_page_payloads(
@@ -1098,6 +1106,7 @@ async def _capture_page_payloads(
     viewport: str,
     domain: str,
     repository: AuditRepository,
+    load_timings: Optional[dict] = None,
 ) -> None:
     """Capture artifacts for a page."""
     try:
@@ -1171,7 +1180,7 @@ async def _capture_page_payloads(
                 repository,
             )
 
-        repository.update_page(page_id, status="ok", load_timings={})
+        repository.update_page(page_id, status="ok", load_timings=load_timings or {})
 
     except Exception as e:
         logger.error(

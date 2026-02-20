@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Report Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        h1, h2, h3 {
+            color: #333;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .error {
+            color: red;
+        }
+        .impact-high {
+            color: red;
+            font-weight: bold;
+        }
+        .impact-medium {
+            color: orange;
+            font-weight: bold;
+        }
+        .impact-low {
+            color: #666;
+        }
+        .score-good {
+            color: green;
+        }
+        .score-medium {
+            color: orange;
+        }
+        .score-poor {
+            color: red;
+        }
+        .category-rating {
+            margin: 15px 0;
+        }
+        .category-label {
+            display: inline-block;
+            background: #f0f0f0;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 5px;
+            min-width: 200px;
+            font-size: 14px;
+        }
+        .progress-bar-container {
+            display: inline-block;
+            width: calc(100% - 250px);
+            height: 30px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            position: relative;
+            vertical-align: middle;
+            margin-left: 10px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #1e3a8a;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 8px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .overall-score-section {
+            margin: 40px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+        .score-cards {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .score-card {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .score-card-primary {
+            background: #1e3a8a;
+            color: white;
+        }
+        .score-card-secondary {
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+        }
+        .score-value {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .score-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .rating-section {
+            margin: 30px 0;
+        }
+        .rating-title {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Audit Report Viewer</h1>
+    
+    <div>
+        <label>Session ID: </label>
+        <input type="text" id="sessionId" placeholder="f897f03f-7404-443a-b497-3a9421463c16" style="width: 400px;">
+        <button onclick="loadReport()">Load Report</button>
+    </div>
+    
+    <div id="loading" class="loading" style="display: none;">Loading...</div>
+    <div id="error" class="error" style="display: none;"></div>
+    
+    <div id="reportContent" style="display: none;">
+        <div class="overall-score-section">
+            <h2>Overall Score</h2>
+            <div id="overallScoreCards"></div>
+        </div>
+        
+        <div class="rating-section">
+            <div class="rating-title">Category Ratings</div>
+            <div id="categoryRatings"></div>
+        </div>
+        
+        <h2>Report Overview</h2>
+        <div id="overview"></div>
+        
+        <h2>Actionable Findings</h2>
+        <div id="actionableFindings"></div>
+        
+        <h2>Stage Summaries</h2>
+        <div id="stageSummaries"></div>
+        
+        <h2>All Questions</h2>
+        <div id="questions"></div>
+    </div>
+
+    <script>
+        async function loadReport() {
+            const sessionId = document.getElementById('sessionId').value.trim();
+            if (!sessionId) {
+                alert('Please enter a session ID');
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('reportContent').style.display = 'none';
+            
+            try {
+                const response = await fetch(`http://localhost:8000/audits/${sessionId}/report`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                displayReport(data);
+                
+            } catch (error) {
+                document.getElementById('error').textContent = 'Error loading report: ' + error.message;
+                document.getElementById('error').style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function displayReport(data) {
+            displayOverallScore(data);
+            displayCategoryRatings(data.category_scores || []);
+            displayOverview(data);
+            displayActionableFindings(data.actionable_findings || []);
+            displayStageSummaries(data.stage_summaries || []);
+            displayQuestions(data.questions || []);
+            
+            document.getElementById('reportContent').style.display = 'block';
+        }
+        
+        /**
+         * Calculate Overall Score from Category Scores
+         * 
+         * Formula: Weighted average of all category scores
+         * - Each category has a score (0-100) and a total_weight
+         * - Overall Score = sum(category_score × category_weight) / sum(category_weights) × 100
+         * 
+         * @param {Array} categoryScores - Array of category score objects with {score, total_weight}
+         * @returns {number} Overall score (0-100)
+         */
+        function calculateOverallScore(categoryScores) {
+            if (!categoryScores || categoryScores.length === 0) {
+                return 0;
+            }
+            
+            let totalWeightedScore = 0;
+            let totalWeight = 0;
+            
+            categoryScores.forEach(cat => {
+                const score = cat.score || 0; // Score is already 0-100
+                const weight = cat.total_weight || 1; // Weight from tier × severity
+                
+                // Add weighted score contribution
+                totalWeightedScore += (score / 100) * weight;
+                totalWeight += weight;
+            });
+            
+            if (totalWeight === 0) {
+                return 0;
+            }
+            
+            // Calculate weighted average and convert back to 0-100 scale
+            const overallScore = (totalWeightedScore / totalWeight) * 100;
+            return Math.round(overallScore);
+        }
+        
+        /**
+         * Calculate Overall Score per Stage (Awareness, Consideration, Conversion)
+         * Groups categories by stage and calculates weighted average per stage
+         * 
+         * @param {Array} categoryScores - Array of category score objects
+         * @param {Array} questions - Array of question objects with category field
+         * @returns {Object} Object with stage scores {awareness: number, consideration: number, conversion: number}
+         */
+        function calculateStageScores(categoryScores, questions) {
+            const stages = {
+                'Awareness': [],
+                'Consideration': [],
+                'Conversion': []
+            };
+            
+            // Map categories to stages based on questions
+            const categoryToStage = {};
+            questions.forEach(q => {
+                const category = q.bar_chart_category;
+                const stage = q.category; // This is the stage (Awareness/Consideration/Conversion)
+                if (stage && stages[stage]) {
+                    categoryToStage[category] = stage;
+                }
+            });
+            
+            // Group category scores by stage
+            categoryScores.forEach(cat => {
+                const stage = categoryToStage[cat.category];
+                if (stage && stages[stage]) {
+                    stages[stage].push(cat);
+                }
+            });
+            
+            // Calculate score for each stage
+            const result = {};
+            Object.keys(stages).forEach(stage => {
+                result[stage.toLowerCase()] = calculateOverallScore(stages[stage]);
+            });
+            
+            return result;
+        }
+        
+        function displayOverallScore(data) {
+            // Use pre-calculated values from JSON response
+            const overallScore = data.overall_score || 0;
+            const stageScores = data.stage_scores || {};
+            
+            // Calculate other metrics
+            const totalQuestions = data.questions ? data.questions.length : 0;
+            const passedQuestions = data.questions ? data.questions.filter(q => q.result === 'pass').length : 0;
+            const actionableFindingsCount = data.actionable_findings ? data.actionable_findings.length : 0;
+            const categoryCount = data.category_scores ? data.category_scores.length : 0;
+            
+            const html = `
+                <div class="score-cards">
+                    <div class="score-card score-card-primary">
+                        <div class="score-label">Overall Score</div>
+                        <div class="score-value">${Math.round(overallScore)}/100</div>
+                        <div style="font-size: 12px; opacity: 0.8; margin-top: 5px;">
+                            Weighted average of ${categoryCount} categories
+                        </div>
+                    </div>
+                    <div class="score-card score-card-secondary">
+                        <div class="score-label">Recommended Changes</div>
+                        <div class="score-value" style="font-size: 24px; color: #333;">${actionableFindingsCount}</div>
+                    </div>
+                    <div class="score-card score-card-secondary">
+                        <div class="score-label">Touchpoints Passed</div>
+                        <div class="score-value" style="font-size: 24px; color: #333;">${passedQuestions}/${totalQuestions}</div>
+                    </div>
+                </div>
+                ${Object.keys(stageScores).length > 0 ? `
+                <div style="margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 8px;">
+                    <h3 style="margin-top: 0;">Stage Scores</h3>
+                    <div style="display: flex; gap: 20px;">
+                        <div><strong>Awareness:</strong> ${stageScores.awareness || 0}%</div>
+                        <div><strong>Consideration:</strong> ${stageScores.consideration || 0}%</div>
+                        <div><strong>Conversion:</strong> ${stageScores.conversion || 0}%</div>
+                    </div>
+                </div>
+                ` : ''}
+            `;
+            document.getElementById('overallScoreCards').innerHTML = html;
+        }
+        
+        function displayCategoryRatings(scores) {
+            if (scores.length === 0) {
+                document.getElementById('categoryRatings').innerHTML = '<p>No category scores available.</p>';
+                return;
+            }
+            
+            let html = '';
+            scores.forEach(cat => {
+                const score = Math.round(cat.score);
+                html += `
+                    <div class="category-rating">
+                        <span class="category-label">${cat.category}</span>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" style="width: ${score}%;">
+                                ${score}%
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('categoryRatings').innerHTML = html;
+        }
+        
+        function displayOverview(data) {
+            const score = data.overall_score_percentage || 0;
+            const scoreClass = score >= 80 ? 'score-good' : score >= 50 ? 'score-medium' : 'score-poor';
+            
+            const html = `
+                <table>
+                    <tr><th>Session ID</th><td>${data.session_id}</td></tr>
+                    <tr><th>URL</th><td>${data.url}</td></tr>
+                    <tr><th>Overall Score</th><td class="${scoreClass}">${score}%</td></tr>
+                    <tr><th>Needs Manual Review</th><td>${data.needs_manual_review ? 'Yes' : 'No'}</td></tr>
+                    <tr><th>Tier 1 Passed</th><td>${data.tier1_passed ? 'Yes' : 'No'}</td></tr>
+                    <tr><th>Tier 2 Passed</th><td>${data.tier2_passed ? 'Yes' : 'No'}</td></tr>
+                    <tr><th>Tier 3 Included</th><td>${data.tier3_included ? 'Yes' : 'No'}</td></tr>
+                </table>
+            `;
+            document.getElementById('overview').innerHTML = html;
+        }
+        
+        function displayCategoryScores(scores) {
+            if (scores.length === 0) {
+                document.getElementById('categoryScores').innerHTML = '<p>No category scores available.</p>';
+                return;
+            }
+            
+            let html = '<table><thead><tr><th>Category</th><th>Score</th><th>Questions</th><th>Total Weight</th></tr></thead><tbody>';
+            
+            scores.forEach(cat => {
+                const scoreClass = cat.score >= 80 ? 'score-good' : cat.score >= 50 ? 'score-medium' : 'score-poor';
+                html += `
+                    <tr>
+                        <td>${cat.category}</td>
+                        <td class="${scoreClass}">${cat.score}%</td>
+                        <td>${cat.total_questions}</td>
+                        <td>${cat.total_weight}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('categoryScores').innerHTML = html;
+        }
+        
+        function displayActionableFindings(findings) {
+            if (findings.length === 0) {
+                document.getElementById('actionableFindings').innerHTML = '<p>No actionable findings.</p>';
+                return;
+            }
+            
+            let html = '<table><thead><tr><th>Actionable Findings</th><th>Impact</th><th>Category</th><th>Tier</th><th>Severity</th></tr></thead><tbody>';
+            
+            findings.forEach(f => {
+                const impactClass = 'impact-' + f.impact.toLowerCase();
+                html += `
+                    <tr>
+                        <td>${f.actionable_finding}</td>
+                        <td class="${impactClass}">${f.impact}</td>
+                        <td>${f.category}</td>
+                        <td>${f.tier}</td>
+                        <td>${f.severity}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('actionableFindings').innerHTML = html;
+        }
+        
+        function displayStageSummaries(summaries) {
+            if (summaries.length === 0) {
+                document.getElementById('stageSummaries').innerHTML = '<p>No stage summaries available.</p>';
+                return;
+            }
+            
+            let html = '';
+            summaries.forEach(s => {
+                html += `
+                    <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd;">
+                        <h3>${s.stage}</h3>
+                        <p><strong>Model:</strong> ${s.model_version}</p>
+                        <p><strong>Generated:</strong> ${s.generated_at}</p>
+                        <p>${s.summary}</p>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('stageSummaries').innerHTML = html;
+        }
+        
+        function displayQuestions(questions) {
+            if (questions.length === 0) {
+                document.getElementById('questions').innerHTML = '<p>No questions available.</p>';
+                return;
+            }
+            
+            let html = '<table><thead><tr><th>ID</th><th>Question</th><th>Category</th><th>Result</th><th>Tier</th><th>Severity</th><th>Exact Fix</th></tr></thead><tbody>';
+            
+            questions.forEach(q => {
+                const resultClass = q.result === 'pass' ? 'score-good' : 'score-poor';
+                html += `
+                    <tr>
+                        <td>${q.question_id}</td>
+                        <td>${q.question}</td>
+                        <td>${q.bar_chart_category}</td>
+                        <td class="${resultClass}">${q.result.toUpperCase()}</td>
+                        <td>${q.tier}</td>
+                        <td>${q.severity}</td>
+                        <td>${q.exact_fix || '-'}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            document.getElementById('questions').innerHTML = html;
+        }
+        
+        // Load report on page load if session ID is in URL
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+            if (sessionId) {
+                document.getElementById('sessionId').value = sessionId;
+                loadReport();
+            }
+        };
+    </script>
+</body>
+</html>

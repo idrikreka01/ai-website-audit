@@ -21,7 +21,9 @@ def upgrade() -> None:
     )
     op.add_column(
         "audit_sessions",
-        sa.Column("functional_flow_details", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "functional_flow_details", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
     )
     op.create_check_constraint(
         "ck_audit_sessions_functional_flow_score",

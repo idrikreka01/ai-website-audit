@@ -480,7 +480,7 @@ async def crawl_homepage_viewport(
                                 domain=domain,
                             )
 
-                            checkout_result = await run_checkout_flow(
+                            await run_checkout_flow(
                                 page,
                                 url,
                                 html_analysis_json,
@@ -489,8 +489,9 @@ async def crawl_homepage_viewport(
                                 domain,
                                 repository,
                             )
-                            
+
                             from worker.orchestrator import _compute_and_store_page_coverage
+
                             try:
                                 _compute_and_store_page_coverage(session_id, repository)
                             except Exception as coverage_error:
@@ -507,13 +508,6 @@ async def crawl_homepage_viewport(
                             error_type=type(e).__name__,
                             session_id=str(session_id),
                         )
-                        checkout_result = {
-                            "variant_selection": {"status": "error", "error": str(e)},
-                            "add_to_cart": {"status": "error"},
-                            "cart_navigation": {"status": "error"},
-                            "checkout_navigation": {"status": "error"},
-                            "errors": [f"Checkout flow exception: {str(e)}"],
-                        }
 
                 break
             except Exception as e:
@@ -964,13 +958,6 @@ async def crawl_pdp_viewport(
                             error_type=type(e).__name__,
                             session_id=str(session_id),
                         )
-                        checkout_result = {
-                            "variant_selection": {"status": "error", "error": str(e)},
-                            "add_to_cart": {"status": "error"},
-                            "cart_navigation": {"status": "error"},
-                            "checkout_navigation": {"status": "error"},
-                            "errors": [f"Checkout flow exception: {str(e)}"],
-                        }
 
                 break
             except Exception as e:
@@ -1062,14 +1049,16 @@ async def crawl_pdp_viewport(
         "load_timings": load_timings,
         "error_summary": error_summary,
     }
-    
+
     if checkout_result is not None:
         page_data["checkout_result"] = checkout_result
         logger.info(
             "checkout_result_included_in_page_data",
             session_id=str(session_id),
             viewport=viewport,
-            checkout_result_keys=list(checkout_result.keys()) if isinstance(checkout_result, dict) else None,
+            checkout_result_keys=(
+                list(checkout_result.keys()) if isinstance(checkout_result, dict) else None
+            ),
         )
     else:
         logger.info(
@@ -1077,7 +1066,7 @@ async def crawl_pdp_viewport(
             session_id=str(session_id),
             viewport=viewport,
         )
-    
+
     return success, page_data
 
 
