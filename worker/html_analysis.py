@@ -490,6 +490,8 @@ def _analyze_automatic_mode(
                 "estimated_cost_usd": estimated_cost_usd,
             }
 
+        request_timeout = float(os.getenv("HTML_ANALYSIS_REQUEST_TIMEOUT_SEC", "120"))
+
         def _call_json_only(user_text: str) -> tuple[Optional[dict], Optional[dict]]:
             """Call Responses API, JSON-only output, one retry. Returns (json_dict, cost_data)."""
             input_per_1m = float(os.getenv("OPENAI_PRICE_INPUT_PER_1M", "0"))
@@ -510,6 +512,7 @@ def _analyze_automatic_mode(
                         }
                     ],
                     text={"format": {"type": "json_object"}},
+                    timeout=request_timeout,
                 )
                 raw = _extract_output_text(resp)
                 cost_data = (
@@ -560,22 +563,99 @@ def _analyze_automatic_mode(
 
         def extract_buy_box_window(html: str, window_size_chars: int = 150000) -> str:
             """
-            Extract focused HTML window around buy box markers.
+            Extract focused HTML window around buy box markers using generic ecommerce patterns.
 
-            Ensures both variant-selection and add-to-cart-section are captured when both exist.
-            Returns HTML chunk covering buy box with surrounding context.
+            Uses ranked anchor system: attribute anchors > button text anchors > variant gating anchors.
+            All patterns are case-insensitive and work across unknown ecommerce sites.
             """
+            cta_anchors = []
+            variant_anchors = []
+
+            atc_tokens = r"add[-_]to[-_](?:cart|bag|basket)|addtocart|addtobag|addtobasket|atc"
+            purchase_tokens = (
+                r"product[-_]form|productform|product__form|buy[-_]box|buybox|purchase|"
+                r"product[-_]options|variants|variant|option|sticky[-_]atc"
+            )
+
+            strong_attr_patterns = [
+                (
+                    r'data-(?:testid|test|qa|cy)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    "strong_atc_testid",
+                ),
+                (
+                    r'(?:id|class)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    "strong_atc_id_class",
+                ),
+            ]
+
+            for pattern, name in strong_attr_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    cta_anchors.append((match.start(), name))
+
+            button_text_patterns = [
+                (
+                    r'<(?:button|a\s+[^>]*role=["\']button["\']|[^>]*role=["\']button["\'])[^>]*>'
+                    r'[^<]*(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout|purchase|reserve|preorder)'
+                    r'[^<]*</(?:button|a)>',
+                    "cta_button_text",
+                ),
+                (
+                    r'<input[^>]*(?:type=["\'](?:submit|button)["\']|role=["\']button["\'])[^>]*'
+                    r'(?:value=["\'][^"\']*(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout)'
+                    r'[^"\']*["\']|>.*?(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout))',
+                    "cta_input_button",
+                ),
+            ]
+
+            for pattern, name in button_text_patterns:
+                match = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+                if match:
+                    cta_anchors.append((match.start(), name))
+
+            variant_gating_patterns = [
+                (
+                    r'>\s*(?:select|choose|pick)\s+(?:a\s+)?(?:size|option|colou?r)\s*<',
+                    "variant_gating_text",
+                ),
+            ]
+
+            for pattern, name in variant_gating_patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if match:
+                    variant_anchors.append((match.start(), name))
+
+            legacy_anchors = []
             atc_section_pos = html.find('id="add-to-cart-section"')
+            if atc_section_pos >= 0:
+                legacy_anchors.append((atc_section_pos, "legacy_add_to_cart_section"))
             variant_selection_pos = html.find('id="variant-selection"')
+            if variant_selection_pos >= 0:
+                legacy_anchors.append((variant_selection_pos, "legacy_variant_selection"))
             primary_button_pos = html.find('data-testid="primary-button"')
+            if primary_button_pos >= 0:
+                legacy_anchors.append((primary_button_pos, "legacy_primary_button"))
             size_selector_pos = html.find('data-testid="size-selector"')
+            if size_selector_pos >= 0:
+                legacy_anchors.append((size_selector_pos, "legacy_size_selector"))
 
-            has_atc_section = atc_section_pos >= 0
-            has_variant_selection = variant_selection_pos >= 0
+            all_cta_anchors = sorted(cta_anchors + legacy_anchors, key=lambda x: x[0])
+            all_variant_anchors = sorted(variant_anchors, key=lambda x: x[0])
 
-            if has_atc_section and has_variant_selection:
-                start_pos = min(atc_section_pos, variant_selection_pos)
-                end_pos = max(atc_section_pos, variant_selection_pos)
+            if all_cta_anchors and all_variant_anchors:
+                cta_pos, cta_name = all_cta_anchors[0]
+                variant_pos, variant_name = all_variant_anchors[0]
+
+                start_pos = min(cta_pos, variant_pos)
+                end_pos = max(cta_pos, variant_pos)
 
                 span_size = end_pos - start_pos
                 padding = max(50000, (window_size_chars - span_size) // 2)
@@ -587,8 +667,8 @@ def _analyze_automatic_mode(
 
                     logger.info(
                         "html_buy_box_extraction_dual_markers",
-                        atc_section_pos=atc_section_pos,
-                        variant_selection_pos=variant_selection_pos,
+                        cta_anchor=cta_name,
+                        variant_anchor=variant_name,
                         start_pos=extracted_start,
                         end_pos=extracted_end,
                         extracted_chars=len(extracted),
@@ -600,23 +680,23 @@ def _analyze_automatic_mode(
                     return extracted
                 else:
                     half_window = window_size_chars // 2
-                    atc_start = max(0, atc_section_pos - half_window)
-                    atc_end = min(len(html), atc_section_pos + half_window)
-                    variant_start = max(0, variant_selection_pos - half_window)
-                    variant_end = min(len(html), variant_selection_pos + half_window)
+                    cta_start = max(0, cta_pos - half_window)
+                    cta_end = min(len(html), cta_pos + half_window)
+                    variant_start = max(0, variant_pos - half_window)
+                    variant_end = min(len(html), variant_pos + half_window)
 
-                    atc_chunk = html[atc_start:atc_end]
+                    cta_chunk = html[cta_start:cta_end]
                     variant_chunk = html[variant_start:variant_end]
 
                     extracted = (
-                        atc_chunk + "\n\n[--- VARIANT SELECTION SECTION ---]\n\n" + variant_chunk
+                        cta_chunk + "\n\n[--- VARIANT SELECTION SECTION ---]\n\n" + variant_chunk
                     )
 
                     logger.info(
                         "html_buy_box_extraction_dual_window",
-                        atc_section_pos=atc_section_pos,
-                        variant_selection_pos=variant_selection_pos,
-                        atc_chunk_size=len(atc_chunk),
+                        cta_anchor=cta_name,
+                        variant_anchor=variant_name,
+                        cta_chunk_size=len(cta_chunk),
                         variant_chunk_size=len(variant_chunk),
                         total_chars=len(extracted),
                         session_id=str(session_id),
@@ -627,23 +707,10 @@ def _analyze_automatic_mode(
             anchor_pos = None
             anchor_name = None
 
-            if has_atc_section:
-                anchor_pos = atc_section_pos
-                anchor_name = "add_to_cart_section"
-            elif has_variant_selection:
-                anchor_pos = variant_selection_pos
-                anchor_name = "variant_selection"
-            elif primary_button_pos >= 0:
-                anchor_pos = primary_button_pos
-                anchor_name = "primary_button"
-            elif size_selector_pos >= 0:
-                anchor_pos = size_selector_pos
-                anchor_name = "size_selector"
-            else:
-                add_to_cart_text_pos = html.find("Add to Cart")
-                if add_to_cart_text_pos >= 0:
-                    anchor_pos = add_to_cart_text_pos
-                    anchor_name = "add_to_cart_text"
+            if all_cta_anchors:
+                anchor_pos, anchor_name = all_cta_anchors[0]
+            elif all_variant_anchors:
+                anchor_pos, anchor_name = all_variant_anchors[0]
 
             if anchor_pos is None:
                 return html
@@ -672,12 +739,68 @@ def _analyze_automatic_mode(
         cleaned_size = len(cleaned_html)
         cleaned_bytes = len(cleaned_html.encode("utf-8"))
 
+        atc_tokens = r"add[-_]to[-_](?:cart|bag|basket)|addtocart|addtobag|addtobasket|atc"
+        purchase_tokens = (
+            r"product[-_]form|productform|product__form|buy[-_]box|buybox|purchase|"
+            r"product[-_]options|variants|variant|option|sticky[-_]atc"
+        )
+
         critical_markers = {
             "id_add_to_cart_section": 'id="add-to-cart-section"' in cleaned_html,
             "data_testid_primary_button": 'data-testid="primary-button"' in cleaned_html,
             "id_variant_selection": 'id="variant-selection"' in cleaned_html,
             "data_testid_size_selector": 'data-testid="size-selector"' in cleaned_html,
-            "add_to_cart_text": "Add to Cart" in cleaned_html,
+            "any_atc_testid": bool(
+                re.search(
+                    r'data-(?:testid|test|qa|cy)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    cleaned_html,
+                    re.IGNORECASE,
+                )
+            ),
+            "any_atc_id_class": bool(
+                re.search(
+                    r'(?:id|class)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    cleaned_html,
+                    re.IGNORECASE,
+                )
+            ),
+            "any_atc_button_text": bool(
+                re.search(
+                    r'<(?:button|a\s+[^>]*role=["\']button["\']|[^>]*role=["\']button["\'])[^>]*>'
+                    r'[^<]*(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout|purchase|reserve|preorder)'
+                    r'[^<]*</(?:button|a)>',
+                    cleaned_html,
+                    re.IGNORECASE | re.DOTALL,
+                )
+            ),
+            "any_buy_now_text": bool(
+                re.search(
+                    r'<(?:button|a\s+[^>]*role=["\']button["\'])[^>]*>[^<]*buy\s+now[^<]*</(?:button|a)>',
+                    cleaned_html,
+                    re.IGNORECASE | re.DOTALL,
+                )
+            ),
+            "any_variant_gating_text": bool(
+                re.search(
+                    r'>\s*(?:select|choose|pick)\s+(?:a\s+)?(?:size|option|colou?r)\s*<',
+                    cleaned_html,
+                    re.IGNORECASE,
+                )
+            ),
+            "add_to_cart_text": bool(
+                re.search(r'>\s*add\s+to\s+cart\s*<', cleaned_html, re.IGNORECASE)
+            ),
+            "add_to_cart_dom_text": bool(
+                re.search(r'>\s*add\s+to\s+cart\s*<', cleaned_html, re.IGNORECASE)
+            ),
         }
 
         logger.info(
@@ -696,9 +819,46 @@ def _analyze_automatic_mode(
             os.getenv("HTML_ANALYSIS_BUY_BOX_EXTRACTION", "true").lower() == "true"
         )
         use_smart_chunking = os.getenv("HTML_ANALYSIS_SMART_CHUNKING", "true").lower() == "true"
+        send_full_html = os.getenv("HTML_ANALYSIS_SEND_FULL_HTML", "false").lower() == "true"
+        use_full_html_chunked = send_full_html and cleaned_size > max_html_chars
 
-        if use_buy_box_extraction and cleaned_size > max_html_chars:
+        if send_full_html and not use_full_html_chunked:
+            if cleaned_size <= max_html_chars:
+                html_to_send = cleaned_html
+                chunking_mode = "full"
+                logger.info(
+                    "html_analysis_full_page_sent",
+                    cleaned_chars=cleaned_size,
+                    session_id=str(session_id),
+                    page_type=page_type,
+                )
+            else:
+                chunk_size = max_html_chars // 3
+                head_chunk = cleaned_html[:chunk_size]
+                mid_start = (len(cleaned_html) - chunk_size) // 2
+                mid_chunk = cleaned_html[mid_start : mid_start + chunk_size]
+                tail_chunk = cleaned_html[-chunk_size:]
+                html_to_send = (
+                    head_chunk
+                    + "\n\n[--- HTML MIDDLE SECTION ---]\n\n"
+                    + mid_chunk
+                    + "\n\n[--- HTML TAIL ---]\n\n"
+                    + tail_chunk
+                )
+                chunking_mode = "full_page_three_chunks"
+                logger.info(
+                    "html_analysis_full_page_three_chunks",
+                    cleaned_size=cleaned_size,
+                    head_size=len(head_chunk),
+                    mid_size=len(mid_chunk),
+                    tail_size=len(tail_chunk),
+                    total_sent=len(html_to_send),
+                    session_id=str(session_id),
+                    page_type=page_type,
+                )
+        elif not use_full_html_chunked and use_buy_box_extraction and cleaned_size > max_html_chars:
             buy_box_html = extract_buy_box_window(cleaned_html, window_size_chars=max_html_chars)
+            buy_box_extracted = len(buy_box_html) < len(cleaned_html)
             if len(buy_box_html) <= max_html_chars:
                 html_to_send = buy_box_html
                 chunking_mode = "buy_box_extraction"
@@ -708,7 +868,7 @@ def _analyze_automatic_mode(
                     session_id=str(session_id),
                     page_type=page_type,
                 )
-            else:
+            elif buy_box_extracted:
                 html_to_send = buy_box_html[:max_html_chars]
                 chunking_mode = "buy_box_extraction_truncated"
                 logger.warning(
@@ -718,10 +878,35 @@ def _analyze_automatic_mode(
                     session_id=str(session_id),
                     page_type=page_type,
                 )
-        elif cleaned_size <= max_html_chars:
+            else:
+                chunk_size = max_html_chars // 3
+                head_chunk = cleaned_html[:chunk_size]
+                mid_start = (len(cleaned_html) - chunk_size) // 2
+                mid_chunk = cleaned_html[mid_start : mid_start + chunk_size]
+                tail_chunk = cleaned_html[-chunk_size:]
+                html_to_send = (
+                    head_chunk
+                    + "\n\n[--- HTML MIDDLE (no anchor found) ---]\n\n"
+                    + mid_chunk
+                    + "\n\n[--- HTML TAIL ---]\n\n"
+                    + tail_chunk
+                )
+                chunking_mode = "head_mid_tail_fallback_no_anchor"
+                logger.info(
+                    "html_analysis_head_mid_tail_fallback_no_anchor",
+                    original_size=original_size,
+                    cleaned_size=cleaned_size,
+                    head_size=len(head_chunk),
+                    mid_size=len(mid_chunk),
+                    tail_size=len(tail_chunk),
+                    total_sent=len(html_to_send),
+                    session_id=str(session_id),
+                    page_type=page_type,
+                )
+        elif not use_full_html_chunked and cleaned_size <= max_html_chars:
             html_to_send = cleaned_html
             chunking_mode = "none"
-        elif use_smart_chunking and cleaned_size > max_html_chars:
+        elif not use_full_html_chunked and use_smart_chunking and cleaned_size > max_html_chars:
             chunk_size = max_html_chars // 2
             head_chunk = cleaned_html[:chunk_size]
             tail_chunk = cleaned_html[-chunk_size:] if len(cleaned_html) > chunk_size else ""
@@ -739,7 +924,7 @@ def _analyze_automatic_mode(
                 session_id=str(session_id),
                 page_type=page_type,
             )
-        else:
+        elif not use_full_html_chunked:
             html_to_send = cleaned_html[:max_html_chars]
             chunking_mode = "truncated"
             logger.info(
@@ -750,6 +935,9 @@ def _analyze_automatic_mode(
                 session_id=str(session_id),
                 page_type=page_type,
             )
+        else:
+            html_to_send = cleaned_html
+            chunking_mode = "full_html_chunked"
 
         sent_chars = len(html_to_send)
         sent_bytes = len(html_to_send.encode("utf-8"))
@@ -758,7 +946,57 @@ def _analyze_automatic_mode(
             "data_testid_primary_button": 'data-testid="primary-button"' in html_to_send,
             "id_variant_selection": 'id="variant-selection"' in html_to_send,
             "data_testid_size_selector": 'data-testid="size-selector"' in html_to_send,
-            "add_to_cart_text": "Add to Cart" in html_to_send,
+            "any_atc_testid": bool(
+                re.search(
+                    r'data-(?:testid|test|qa|cy)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    html_to_send,
+                    re.IGNORECASE,
+                )
+            ),
+            "any_atc_id_class": bool(
+                re.search(
+                    r'(?:id|class)=["\'][^"\']*(?:'
+                    + atc_tokens
+                    + r"|"
+                    + purchase_tokens
+                    + r')[^"\']*["\']',
+                    html_to_send,
+                    re.IGNORECASE,
+                )
+            ),
+            "any_atc_button_text": bool(
+                re.search(
+                    r'<(?:button|a\s+[^>]*role=["\']button["\']|[^>]*role=["\']button["\'])[^>]*>'
+                    r'[^<]*(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout|purchase|reserve|preorder)'
+                    r'[^<]*</(?:button|a)>',
+                    html_to_send,
+                    re.IGNORECASE | re.DOTALL,
+                )
+            ),
+            "any_buy_now_text": bool(
+                re.search(
+                    r'<(?:button|a\s+[^>]*role=["\']button["\'])[^>]*>[^<]*buy\s+now[^<]*</(?:button|a)>',
+                    html_to_send,
+                    re.IGNORECASE | re.DOTALL,
+                )
+            ),
+            "any_variant_gating_text": bool(
+                re.search(
+                    r'>\s*(?:select|choose|pick)\s+(?:a\s+)?(?:size|option|colou?r)\s*<',
+                    html_to_send,
+                    re.IGNORECASE,
+                )
+            ),
+            "add_to_cart_text": bool(
+                re.search(r'>\s*add\s+to\s+cart\s*<', html_to_send, re.IGNORECASE)
+            ),
+            "add_to_cart_dom_text": bool(
+                re.search(r'>\s*add\s+to\s+cart\s*<', html_to_send, re.IGNORECASE)
+            ),
         }
 
         missing_markers = [
@@ -784,7 +1022,57 @@ def _analyze_automatic_mode(
                 "data_testid_primary_button": 'data-testid="primary-button"' in recovered_html,
                 "id_variant_selection": 'id="variant-selection"' in recovered_html,
                 "data_testid_size_selector": 'data-testid="size-selector"' in recovered_html,
-                "add_to_cart_text": "Add to Cart" in recovered_html,
+                "any_atc_testid": bool(
+                    re.search(
+                        r'data-(?:testid|test|qa|cy)=["\'][^"\']*(?:'
+                        + atc_tokens
+                        + r"|"
+                        + purchase_tokens
+                        + r')[^"\']*["\']',
+                        recovered_html,
+                        re.IGNORECASE,
+                    )
+                ),
+                "any_atc_id_class": bool(
+                    re.search(
+                        r'(?:id|class)=["\'][^"\']*(?:'
+                        + atc_tokens
+                        + r"|"
+                        + purchase_tokens
+                        + r')[^"\']*["\']',
+                        recovered_html,
+                        re.IGNORECASE,
+                    )
+                ),
+                "any_atc_button_text": bool(
+                    re.search(
+                        r'<(?:button|a\s+[^>]*role=["\']button["\']|[^>]*role=["\']button["\'])[^>]*>'
+                        r'[^<]*(?:add\s+(?:to\s+)?(?:cart|bag|basket)|buy\s+now|checkout|purchase|reserve|preorder)'
+                        r'[^<]*</(?:button|a)>',
+                        recovered_html,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                ),
+                "any_buy_now_text": bool(
+                    re.search(
+                        r'<(?:button|a\s+[^>]*role=["\']button["\'])[^>]*>[^<]*buy\s+now[^<]*</(?:button|a)>',
+                        recovered_html,
+                        re.IGNORECASE | re.DOTALL,
+                    )
+                ),
+                "any_variant_gating_text": bool(
+                    re.search(
+                        r'>\s*(?:select|choose|pick)\s+(?:a\s+)?(?:size|option|colou?r)\s*<',
+                        recovered_html,
+                        re.IGNORECASE,
+                    )
+                ),
+                "add_to_cart_text": bool(
+                    re.search(r'>\s*add\s+to\s+cart\s*<', recovered_html, re.IGNORECASE)
+                ),
+                "add_to_cart_dom_text": bool(
+                    re.search(r'>\s*add\s+to\s+cart\s*<', recovered_html, re.IGNORECASE)
+                ),
             }
 
             still_missing = [
@@ -840,7 +1128,7 @@ def _analyze_automatic_mode(
             viewport=viewport,
         )
 
-        if use_single_request:
+        if use_single_request and not use_full_html_chunked:
             logger.info(
                 "html_analysis_single_request_mode",
                 original_html_size=original_size,
@@ -854,7 +1142,15 @@ def _analyze_automatic_mode(
                 page_type=page_type,
             )
 
-            user_text = base_prompt + "\n\n" + "RAW HTML:\n" + html_to_send
+            if page_type in ("cart", "checkout"):
+                page_context = (
+                    "PAGE CONTEXT: This HTML is from a CART or CHECKOUT page. "
+                    "You MUST identify the main Checkout CTA (button or link: e.g. 'Proceed to checkout', 'Checkout', 'Go to checkout', 'Secure checkout') and return it in cart_confirmation.checkout. "
+                    "form, add_to_cart, and variant_groups may be null/empty for cart pages; focus on cart_confirmation.view_cart and cart_confirmation.checkout.\n\n"
+                )
+                user_text = page_context + base_prompt + "\n\n" + "RAW HTML:\n" + html_to_send
+            else:
+                user_text = base_prompt + "\n\n" + "RAW HTML:\n" + html_to_send
 
             analysis_json, cost_data = _call_json_only(user_text)
             if not isinstance(analysis_json, dict):
@@ -929,9 +1225,22 @@ def _analyze_automatic_mode(
             analysis_json["_file_path"] = str(analysis_path.absolute())
             return analysis_json
 
-        chunk_chars = int(os.getenv("HTML_ANALYSIS_CHUNK_CHARS", "80000"))
-        max_chunks = int(os.getenv("HTML_ANALYSIS_MAX_CHUNKS", "25"))
-        strategy = os.getenv("HTML_ANALYSIS_CHUNK_STRATEGY", "all")
+        if use_full_html_chunked:
+            chunk_chars = int(os.getenv("HTML_ANALYSIS_FULL_HTML_CHUNK_CHARS", "100000"))
+            max_chunks = int(os.getenv("HTML_ANALYSIS_FULL_HTML_MAX_CHUNKS", "60"))
+            strategy = "all"
+            logger.info(
+                "html_analysis_full_html_chunked_mode",
+                cleaned_size=cleaned_size,
+                chunk_chars=chunk_chars,
+                max_chunks=max_chunks,
+                session_id=str(session_id),
+                page_type=page_type,
+            )
+        else:
+            chunk_chars = int(os.getenv("HTML_ANALYSIS_CHUNK_CHARS", "80000"))
+            max_chunks = int(os.getenv("HTML_ANALYSIS_MAX_CHUNKS", "25"))
+            strategy = os.getenv("HTML_ANALYSIS_CHUNK_STRATEGY", "all")
 
         chunks = _chunk_text(cleaned_html, chunk_chars)
         total_chunks = len(chunks)
@@ -952,6 +1261,7 @@ def _analyze_automatic_mode(
             selected_chunks=len(selected),
             chunk_chars=chunk_chars,
             strategy=strategy,
+            full_html_chunked=use_full_html_chunked,
         )
 
         if telegram_enabled:
@@ -987,10 +1297,17 @@ def _analyze_automatic_mode(
             "consolidation_calls": 0,
         }
 
+        chunk_page_context = ""
+        if page_type in ("cart", "checkout"):
+            chunk_page_context = (
+                "PAGE CONTEXT: This HTML is from a CART or CHECKOUT page. "
+                "Identify the main Checkout CTA and return it in cart_confirmation.checkout when found.\n\n"
+            )
         partials: list[dict] = []
         for idx, ch in enumerate(selected, start=1):
             user_text = (
-                base_prompt
+                chunk_page_context
+                + base_prompt
                 + "\n\n"
                 + "IMPORTANT: You are receiving only a PARTIAL CHUNK of the full HTML.\n"
                 + "Extract whatever you can FROM THIS CHUNK ONLY. If unknown, leave null/empty.\n"

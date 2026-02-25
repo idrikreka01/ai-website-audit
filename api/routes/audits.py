@@ -11,6 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from api.db import get_db_session
@@ -449,3 +450,148 @@ def get_audit_report(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate JSON report: {str(e)}",
         )
+
+
+@router.post(
+    "/{session_id}/report/pdf/generate",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Generate PDF report for audit session",
+)
+def generate_audit_report_pdf(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> dict:
+    """
+    Trigger PDF report generation for audit session.
+
+    Returns 202 Accepted if generation started, or 404 if session not found.
+    """
+    bind_request_context(session_id=str(session_id))
+
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_pdf_generation", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+
+    try:
+        from urllib.parse import urlparse
+        from worker.pdf_generator import generate_and_save_pdf_report
+        from worker.repository import AuditRepository
+
+        domain = urlparse(session.url).netloc or "unknown"
+        repository = AuditRepository(service.repository.session)
+        pdf_uri = generate_and_save_pdf_report(session_id, domain, repository)
+
+        if pdf_uri:
+            logger.info(
+                "pdf_report_generation_triggered",
+                session_id=str(session_id),
+                storage_uri=pdf_uri,
+            )
+            return {
+                "status": "generated",
+                "session_id": str(session_id),
+                "storage_uri": pdf_uri,
+                "message": "PDF report generated successfully",
+            }
+        else:
+            logger.warning(
+                "pdf_report_generation_failed",
+                session_id=str(session_id),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PDF report generation failed. Check logs for details.",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "pdf_report_generation_error",
+            session_id=str(session_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate PDF report: {str(e)}",
+        )
+
+
+@router.get(
+    "/{session_id}/report/pdf",
+    response_class=FileResponse,
+    summary="Get PDF report for audit session",
+)
+def get_audit_report_pdf(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> FileResponse:
+    """
+    Get PDF report for audit session.
+
+    Returns the PDF file if it exists, otherwise returns 404.
+    """
+    bind_request_context(session_id=str(session_id))
+
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_pdf", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+
+    artifacts = service.get_audit_artifacts(session_id)
+    if artifacts is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found",
+        )
+
+    pdf_artifact = next((a for a in artifacts if a.type == "report_pdf"), None)
+    if pdf_artifact is None:
+        logger.warning(
+            "pdf_report_not_found",
+            session_id=str(session_id),
+            message="PDF report not yet generated",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"PDF report not found for session {session_id}. It may still be generating.",
+        )
+
+    from pathlib import Path
+    from shared.config import get_config
+
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    pdf_path = artifacts_root / pdf_artifact.storage_uri
+
+    if not pdf_path.exists():
+        logger.error(
+            "pdf_file_not_found_on_disk",
+            session_id=str(session_id),
+            storage_uri=pdf_artifact.storage_uri,
+            expected_path=str(pdf_path),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"PDF file not found on disk for session {session_id}",
+        )
+
+    logger.info(
+        "pdf_report_downloaded",
+        session_id=str(session_id),
+        storage_uri=pdf_artifact.storage_uri,
+        size_bytes=pdf_artifact.size_bytes,
+    )
+
+    return FileResponse(
+        path=str(pdf_path),
+        media_type="application/pdf",
+        filename=f"audit_report_{session_id}.pdf",
+    )

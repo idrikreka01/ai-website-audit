@@ -8,6 +8,8 @@ and captures artifacts (screenshots, HTML, visible_text) for each step.
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 from uuid import UUID
@@ -154,12 +156,18 @@ async def run_checkout_flow(
                     await scroll_sequence(page)
                     await dismiss_popups(page)
 
-                    await _capture_page_payloads(
+                    cart_analysis = await _capture_page_payloads(
                         page, "cart", session_id, viewport, domain, repository, cart_load_timings
                     )
 
                     checkout_navigated, checkout_load_timings = await _navigate_to_checkout(
-                        page, product_url, session_id, viewport, domain, repository
+                        page,
+                        product_url,
+                        session_id,
+                        viewport,
+                        domain,
+                        repository,
+                        cart_analysis=cart_analysis,
                     )
                     result["checkout_navigation"]["status"] = (
                         "completed" if checkout_navigated else "failed"
@@ -180,7 +188,72 @@ async def run_checkout_flow(
                             checkout_load_timings,
                         )
         else:
-            result["errors"].append("Add-to-cart button not found in analysis JSON")
+            logger.info(
+                "add_to_cart_no_selector_trying_fallback",
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+            added = await _add_to_cart_fallback(
+                page, repository, session_id, viewport, domain
+            )
+            if added:
+                result["add_to_cart"]["status"] = "completed"
+                await asyncio.sleep(2)
+                await wait_for_page_ready(page, soft_timeout=5000)
+                await dismiss_popups(page)
+                cart_navigated, cart_load_timings = await _navigate_to_cart(
+                    page, product_url, session_id, viewport, domain, repository
+                )
+                result["cart_navigation"]["status"] = (
+                    "completed" if cart_navigated else "failed"
+                )
+                if cart_navigated:
+                    await wait_for_page_ready(page, soft_timeout=10000)
+                    await scroll_sequence(page)
+                    await dismiss_popups(page)
+                    cart_analysis = await _capture_page_payloads(
+                        page,
+                        "cart",
+                        session_id,
+                        viewport,
+                        domain,
+                        repository,
+                        cart_load_timings,
+                    )
+                    checkout_navigated, checkout_load_timings = await _navigate_to_checkout(
+                        page,
+                        product_url,
+                        session_id,
+                        viewport,
+                        domain,
+                        repository,
+                        cart_analysis=cart_analysis,
+                    )
+                    result["checkout_navigation"]["status"] = (
+                        "completed" if checkout_navigated else "failed"
+                    )
+                    if checkout_navigated:
+                        await wait_for_page_ready(page, soft_timeout=10000)
+                        await scroll_sequence(page)
+                        await dismiss_popups(page)
+                        await _capture_page_payloads(
+                            page,
+                            "checkout",
+                            session_id,
+                            viewport,
+                            domain,
+                            repository,
+                            checkout_load_timings,
+                        )
+                logger.info(
+                    "add_to_cart_fallback_succeeded",
+                    session_id=str(session_id),
+                    viewport=viewport,
+                    domain=domain,
+                )
+            else:
+                result["errors"].append("Add-to-cart button not found in analysis JSON")
 
     except Exception as e:
         logger.error(
@@ -945,6 +1018,81 @@ async def _add_to_cart(
         return False
 
 
+PDP_ADD_TO_CART_FALLBACK_SELECTORS = [
+    "button:has-text('Add to cart' i)",
+    "button:has-text('Add to bag' i)",
+    "button:has-text('Add to basket' i)",
+    "button:has-text('Buy now' i)",
+    "button:has-text('Purchase' i)",
+    "a:has-text('Add to cart' i)",
+    "a:has-text('Add to bag' i)",
+    "a:has-text('Add to basket' i)",
+    "a:has-text('Buy now' i)",
+    "[role='button']:has-text('Add to cart' i)",
+    "[role='button']:has-text('Add to bag' i)",
+    "[role='button']:has-text('Buy now' i)",
+    "input[type='submit'][value*='Add' i]",
+    "input[type='submit'][value*='Cart' i]",
+    "input[type='submit'][value*='Buy' i]",
+    "[data-testid*='add-to-cart']",
+    "[data-testid*='addToCart']",
+    "[data-testid*='add-to-bag']",
+    "[data-testid*='add-to-basket']",
+    "[data-test*='add-to-cart']",
+    "[data-qa*='add-to-cart']",
+    "[data-action*='add-to-cart']",
+    "[data-testid*='buy-now']",
+    "[id*='add-to-cart']",
+    "[id*='addToCart']",
+    "[class*='add-to-cart']",
+    "[class*='add-to-bag']",
+    "[class*='addtocart']",
+    "button[class*='add-to-cart']",
+    "a[class*='add-to-cart']",
+]
+
+
+async def _add_to_cart_fallback(
+    page: Page,
+    repository: AuditRepository,
+    session_id: UUID,
+    viewport: str,
+    domain: str,
+) -> bool:
+    """
+    When HTML analysis did not return an add-to-cart selector, try generic PDP ATC
+    selectors. Used on PDP only (caller ensures we are on product page).
+    """
+    for selector in PDP_ADD_TO_CART_FALLBACK_SELECTORS:
+        try:
+            locator = page.locator(selector)
+            if await locator.count() == 0:
+                continue
+            first = locator.first
+            await first.scroll_into_view_if_needed(timeout=3000)
+            if not await first.is_visible(timeout=2000):
+                continue
+            await first.click(timeout=5000)
+            await asyncio.sleep(2)
+            logger.info(
+                "add_to_cart_fallback_clicked",
+                selector=selector,
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+            return True
+        except Exception as e:
+            logger.debug(
+                "add_to_cart_fallback_selector_failed",
+                selector=selector,
+                error=str(e)[:80],
+                session_id=str(session_id),
+            )
+            continue
+    return False
+
+
 async def _navigate_to_cart(
     page: Page,
     base_url: str,
@@ -1007,6 +1155,43 @@ async def _navigate_to_cart(
     return False, {}
 
 
+def _checkout_selectors_from_cart_analysis(cart_analysis: Optional[dict]) -> list[str]:
+    if not cart_analysis or not isinstance(cart_analysis, dict):
+        return []
+    checkout_obj = (cart_analysis.get("cart_confirmation") or {}).get("checkout")
+    if not checkout_obj or not isinstance(checkout_obj, dict):
+        return []
+    sel = checkout_obj.get("selector")
+    sel_type = (checkout_obj.get("selector_type") or "").strip().lower()
+    if not sel or not sel_type:
+        return []
+    if sel_type == "xpath":
+        return [f"xpath={sel}"]
+    if sel_type == "css":
+        return [sel]
+    return []
+
+
+def _cart_checkout_selectors_from_file(domain: str, session_id: UUID) -> list[str]:
+    config = get_config()
+    artifacts_dir = Path(getattr(config, "artifacts_dir", "") or "")
+    if not artifacts_dir.is_dir():
+        return []
+    normalized_domain = (domain or "").strip().lower()
+    if normalized_domain.startswith("www."):
+        normalized_domain = normalized_domain[4:]
+    root_name = f"{normalized_domain}__{session_id}"
+    cart_path = artifacts_dir / root_name / "cart" / "html_analysis.json"
+    if not cart_path.exists():
+        return []
+    try:
+        with open(cart_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return []
+    return _checkout_selectors_from_cart_analysis(data)
+
+
 async def _navigate_to_checkout(
     page: Page,
     base_url: str,
@@ -1014,23 +1199,36 @@ async def _navigate_to_checkout(
     viewport: str,
     domain: str,
     repository: AuditRepository,
-) -> bool:
-    """Navigate to checkout page."""
+    cart_analysis: Optional[dict] = None,
+) -> tuple[bool, dict]:
+    """Navigate to checkout page. Uses cart_analysis checkout selector when provided."""
+    cart_selectors = _checkout_selectors_from_cart_analysis(cart_analysis)
+    if not cart_selectors:
+        cart_selectors = _cart_checkout_selectors_from_file(domain, session_id)
+    if cart_selectors:
+        logger.info(
+            "checkout_using_cart_analysis_selectors",
+            selectors=cart_selectors,
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
     checkout_selectors = [
         'button:has-text("checkout securely" i)',
-        'button:has-text("checkout securely")',
-        'button:has-text("CHECKOUT SECURELY")',
-        'button:has-text("proceed to checkout" i)',
-        'button:has-text("proceed to checkout")',
-        'button:has-text("secure checkout" i)',
-        'button:has-text("secure checkout")',
-        'button:has-text("checkout" i)',
         'a:has-text("checkout securely" i)',
+        '[role="button"]:has-text("checkout securely" i)',
+        '[data-testid="bag-checkout-select"]',
+        'a[data-testid*="bag-checkout"]',
+        '[data-testid*="checkout"]',
+        'button:has-text("proceed to checkout" i)',
+        'button:has-text("secure checkout" i)',
+        'button:has-text("checkout" i)',
         'a:has-text("checkout" i)',
         'a[href*="/checkout"]',
-        '[data-testid*="checkout"]',
         '[aria-label*="checkout" i]',
     ]
+    if cart_selectors:
+        checkout_selectors = cart_selectors + checkout_selectors
 
     for selector in checkout_selectors:
         try:
@@ -1055,6 +1253,10 @@ async def _navigate_to_checkout(
                     domain=domain,
                 )
 
+                try:
+                    await elem.scroll_into_view_if_needed(timeout=3000)
+                except Exception:
+                    pass
                 await elem.click(timeout=5000)
                 await asyncio.sleep(2)
                 load_timings = await wait_for_page_ready(page, soft_timeout=5000)
@@ -1107,8 +1309,8 @@ async def _capture_page_payloads(
     domain: str,
     repository: AuditRepository,
     load_timings: Optional[dict] = None,
-) -> None:
-    """Capture artifacts for a page."""
+) -> Optional[dict]:
+    """Capture artifacts for a page. Returns cart html_analysis dict when page_type is cart."""
     try:
         page_data = repository.get_page_by_session_type_viewport(session_id, page_type, viewport)
         if not page_data:
@@ -1169,8 +1371,9 @@ async def _capture_page_payloads(
             html_content,
         )
 
+        cart_analysis_result = None
         if page_type == "cart" and html_content:
-            analyze_product_html(
+            cart_analysis_result = analyze_product_html(
                 None,
                 session_id,
                 page_id,
@@ -1182,6 +1385,8 @@ async def _capture_page_payloads(
 
         repository.update_page(page_id, status="ok", load_timings=load_timings or {})
 
+        return cart_analysis_result if page_type == "cart" else None
+
     except Exception as e:
         logger.error(
             "payload_capture_failed",
@@ -1189,3 +1394,4 @@ async def _capture_page_payloads(
             error=str(e),
             error_type=type(e).__name__,
         )
+        return None

@@ -17,6 +17,7 @@ from shared.logging import bind_request_context, get_logger
 from shared.telegram import send_telegram_message
 from worker.crawl_runner import crawl_homepage_async, crawl_pdp_async
 from worker.pdp_discovery import ensure_pdp_page_records, run_pdp_discovery_and_validation
+from worker.pdf_generator import generate_and_save_pdf_report
 from worker.repository import AuditRepository
 from worker.session_status import compute_session_status, session_low_confidence_from_pages
 
@@ -865,10 +866,33 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 session_id=str(session_uuid),
                 overall_percentage=score_data["overall_percentage"],
             )
+
     except Exception as e:
         logger.error(
             "overall_score_computation_failed",
             error=str(e),
             error_type=type(e).__name__,
             session_id=str(session_uuid),
+        )
+
+    try:
+        pdf_uri = generate_and_save_pdf_report(session_uuid, domain, repository)
+        if pdf_uri:
+            logger.info(
+                "pdf_report_generated_successfully",
+                session_id=str(session_uuid),
+                storage_uri=pdf_uri,
+            )
+        else:
+            logger.warning(
+                "pdf_report_generation_skipped",
+                session_id=str(session_uuid),
+                reason="generation_failed",
+            )
+    except Exception as e:
+        logger.error(
+            "pdf_report_generation_error",
+            session_id=str(session_uuid),
+            error=str(e),
+            error_type=type(e).__name__,
         )

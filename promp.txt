@@ -122,8 +122,10 @@ Return:
 - `disabled_hint` (use `"out_of_stock"` if clearly disabled/unavailable)
 - `enabled_condition="after_required_variants"` if applicable
 
-## Step 4 — Cart/checkout confirmation (optional)
-If present, return selectors for View Cart and Checkout.
+## Step 4 — Cart/checkout confirmation (critical on cart pages)
+- **On cart/bag/basket pages:** You MUST find the main **Checkout** CTA (button or link) that takes the user to checkout, and return it in `cart_confirmation.checkout`. Look for text like "Proceed to checkout", "Checkout", "Secure checkout", "Go to checkout", or elements with `data-testid`/`id`/`class` containing "checkout". This selector will be used to click through to the checkout page. If the cart is empty and the checkout button is hidden or not present in the HTML, set `checkout` to `null` and add a warning.
+- **view_cart:** If present (e.g. on PDP or after add-to-cart), return the View Cart link/button selector; on cart pages it may be `null`.
+- Prefer stable selectors: `@data-testid`, `@data-test`, `@id`, `@aria-label`, or link `@href` containing `/checkout` or `/bag`/`/cart`.
 
 ## Sanity checks (mandatory)
 - Remove any variant group related to share/social.

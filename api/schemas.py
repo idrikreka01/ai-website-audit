@@ -85,8 +85,16 @@ class ArtifactResponse(BaseModel):
 
     id: UUID
     session_id: UUID
-    page_id: UUID
-    type: Literal["screenshot", "visible_text", "features_json", "html_gz"]
+    page_id: Optional[UUID] = None
+    type: Literal[
+        "screenshot",
+        "visible_text",
+        "features_json",
+        "html_gz",
+        "session_logs_jsonl",
+        "html_analysis_json",
+        "report_pdf",
+    ]
     storage_uri: str
     size_bytes: int
     created_at: datetime
