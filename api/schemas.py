@@ -112,6 +112,17 @@ class CreateAuditResponse(BaseModel):
     url: str
 
 
+QUESTION_PAGE_TYPES = Literal[
+    "homepage",
+    "product",
+    "cart",
+    "checkout",
+    "navigation",
+    "collection",
+    "404",
+]
+
+
 class AuditQuestionResponse(BaseModel):
     """Response schema for audit question."""
 
@@ -123,7 +134,7 @@ class AuditQuestionResponse(BaseModel):
     severity: int
     bar_chart_category: str
     exact_fix: str
-    page_type: Literal["homepage", "product", "cart", "checkout"]
+    page_type: QUESTION_PAGE_TYPES
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -138,15 +149,7 @@ class CreateAuditQuestionRequest(BaseModel):
     severity: int = Field(..., ge=1, le=5, description="Severity score (1-5)")
     bar_chart_category: str = Field(..., description="Bar chart category")
     exact_fix: str = Field(..., description="Exact fix description")
-    page_type: Literal[
-        "homepage",
-        "product",
-        "cart",
-        "checkout",
-        "navigation",
-        "collection",
-        "404",
-    ] = Field(
+    page_type: QUESTION_PAGE_TYPES = Field(
         ..., description="Page type this question applies to"
     )
 
@@ -161,17 +164,7 @@ class UpdateAuditQuestionRequest(BaseModel):
     severity: Optional[int] = Field(None, ge=1, le=5)
     bar_chart_category: Optional[str] = None
     exact_fix: Optional[str] = None
-    page_type: Optional[
-        Literal[
-            "homepage",
-            "product",
-            "cart",
-            "checkout",
-            "navigation",
-            "collection",
-            "404",
-        ]
-    ] = None
+    page_type: Optional[QUESTION_PAGE_TYPES] = None
 
 
 class AuditResultResponse(BaseModel):
