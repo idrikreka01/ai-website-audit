@@ -5,6 +5,12 @@ import sys
 import urllib.error
 import urllib.request
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 ENDPOINT = os.getenv("AUDIT_API_URL", "http://localhost:8000/audits")
 
 

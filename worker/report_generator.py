@@ -325,13 +325,23 @@ def generate_audit_report(session_id: UUID, repository: AuditRepository) -> dict
             "session_id": str(session_id),
             "url": session_data.get("url", ""),
             "overall_score_percentage": session_data.get("overall_score_percentage"),
+            "overall_score": 0.0,
+            "stage_scores": {"awareness": 0.0, "consideration": 0.0, "conversion": 0.0},
+            "category_scores_by_stage": {
+                "awareness": [],
+                "consideration": [],
+                "conversion": [],
+            },
+            "storefront_report_card": {
+                "stage_descriptions": {},
+                "final_thoughts": "",
+            },
             "tier1_passed": False,
+            "tier2_passed": False,
+            "tier3_included": False,
             "questions": [],
             "stage_summaries": [],
-            "category_scores_by_stage": {},
-            "stage_scores": {},
             "actionable_findings": [],
-            "storefront_report_card": {},
         }
 
     questions_map = {}
