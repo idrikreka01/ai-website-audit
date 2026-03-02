@@ -138,7 +138,15 @@ class CreateAuditQuestionRequest(BaseModel):
     severity: int = Field(..., ge=1, le=5, description="Severity score (1-5)")
     bar_chart_category: str = Field(..., description="Bar chart category")
     exact_fix: str = Field(..., description="Exact fix description")
-    page_type: Literal["homepage", "product", "cart", "checkout"] = Field(
+    page_type: Literal[
+        "homepage",
+        "product",
+        "cart",
+        "checkout",
+        "navigation",
+        "collection",
+        "404",
+    ] = Field(
         ..., description="Page type this question applies to"
     )
 
@@ -153,7 +161,17 @@ class UpdateAuditQuestionRequest(BaseModel):
     severity: Optional[int] = Field(None, ge=1, le=5)
     bar_chart_category: Optional[str] = None
     exact_fix: Optional[str] = None
-    page_type: Optional[Literal["homepage", "product", "cart", "checkout"]] = None
+    page_type: Optional[
+        Literal[
+            "homepage",
+            "product",
+            "cart",
+            "checkout",
+            "navigation",
+            "collection",
+            "404",
+        ]
+    ] = None
 
 
 class AuditResultResponse(BaseModel):
