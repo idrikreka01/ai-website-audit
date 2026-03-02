@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from api.auth import verify_api_token
 from api.db import get_db_session
 from api.repositories.audit_repository import AuditRepository
 from api.schemas import (
@@ -31,7 +32,11 @@ from api.services.audit_service import AuditService
 from shared.logging import bind_request_context, get_logger
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/audits", tags=["audits"])
+router = APIRouter(
+    prefix="/audits",
+    tags=["audits"],
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 def get_audit_service(session: Annotated[Session, Depends(get_db_session)]) -> AuditService:
@@ -528,12 +533,14 @@ def generate_audit_report_pdf(
 )
 def get_audit_report_pdf(
     session_id: UUID,
+    regenerate: bool = False,
     service: Annotated[AuditService, Depends(get_audit_service)] = ...,
 ) -> FileResponse:
     """
     Get PDF report for audit session.
 
-    Returns the PDF file if it exists, otherwise returns 404.
+    Returns the PDF file if it exists. If regenerate=true, generates a new PDF
+    from the current template first, then returns it.
     """
     bind_request_context(session_id=str(session_id))
 
@@ -544,6 +551,24 @@ def get_audit_report_pdf(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Audit session {session_id} not found",
         )
+
+    if regenerate:
+        from urllib.parse import urlparse
+        from worker.pdf_generator import generate_and_save_pdf_report
+        from worker.repository import AuditRepository
+
+        domain = urlparse(session.url).netloc or "unknown"
+        repository = AuditRepository(service.repository.session)
+        pdf_uri = generate_and_save_pdf_report(session_id, domain, repository)
+        if not pdf_uri:
+            logger.warning(
+                "pdf_report_regenerate_failed",
+                session_id=str(session_id),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="PDF report regeneration failed.",
+            )
 
     artifacts = service.get_audit_artifacts(session_id)
     if artifacts is None:

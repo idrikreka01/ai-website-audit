@@ -323,9 +323,15 @@ def generate_audit_report(session_id: UUID, repository: AuditRepository) -> dict
         )
         return {
             "session_id": str(session_id),
+            "url": session_data.get("url", ""),
             "overall_score_percentage": session_data.get("overall_score_percentage"),
             "tier1_passed": False,
             "questions": [],
+            "stage_summaries": [],
+            "category_scores_by_stage": {},
+            "stage_scores": {},
+            "actionable_findings": [],
+            "storefront_report_card": {},
         }
 
     questions_map = {}

@@ -72,6 +72,14 @@ class AppConfig:
     telegram_bot_token: Optional[str]
     telegram_chat_id: Optional[str]
 
+    # API authentication (optional). When set, all /audits requests require
+    # Authorization: Bearer <key> or X-API-Key: <key>. Leave unset for local dev.
+    api_secret_key: Optional[str]
+
+    # Public base URL of the API (e.g. https://your-app.ondigitalocean.app). When set,
+    # Telegram "report ready" notification includes a link to view the PDF.
+    report_base_url: Optional[str]
+
     @classmethod
     def from_env(cls) -> "AppConfig":
         """
@@ -133,6 +141,8 @@ class AppConfig:
             html_analysis_mode=os.getenv("HTML_ANALYSIS_MODE", "automatic").lower(),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
+            api_secret_key=os.getenv("API_SECRET_KEY") or None,
+            report_base_url=os.getenv("REPORT_BASE_URL") or None,
         )
 
 

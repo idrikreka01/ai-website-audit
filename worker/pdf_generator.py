@@ -98,16 +98,70 @@ def _html_to_pdf(html: str, output_path: Path) -> None:
             page = browser.new_page()
             page.goto(temp_html.as_uri(), wait_until="networkidle")
             page.pdf(
-                path=str(output_path),
-                format="A4",
-                print_background=True,
-                margin={"top": "0mm", "right": "0mm", "bottom": "0mm", "left": "0mm"},
-            )
+    path=str(output_path),
+    width="612px",
+    height="792px",
+    scale=1.49,  # 2–3% is usually enough
+    print_background=True,
+    margin={"top": "0mm", "right": "0mm", "bottom": "0mm", "left": "0mm"},
+)
             browser.close()
             logger.info("pdf_generated", output_path=str(output_path))
     finally:
         if temp_html.exists():
             temp_html.unlink()
+
+
+def _crop_pdf_borders(pdf_path: Path, trim_points: float = 8.0) -> None:
+    """
+    Trim a few points from each edge of each page so any residual
+    inner whitespace is removed. This relies only on page boxes,
+    not content inspection, so it's deterministic and fast.
+    """
+    try:
+        from PyPDF2 import PdfReader, PdfWriter
+    except ImportError:
+        # If PyPDF2 is not available for some reason, keep the original PDF.
+        logger.warning("pdf_crop_skipped_missing_dependency")
+        return
+
+    try:
+        reader = PdfReader(str(pdf_path))
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            box = page.mediabox
+            llx, lly = float(box.left), float(box.bottom)
+            urx, ury = float(box.right), float(box.top)
+
+            new_llx = llx + trim_points
+            new_lly = lly + trim_points
+            new_urx = urx - trim_points
+            new_ury = ury - trim_points
+
+            page.mediabox.lower_left = (new_llx, new_lly)
+            page.mediabox.upper_right = (new_urx, new_ury)
+            page.cropbox.lower_left = (new_llx, new_lly)
+            page.cropbox.upper_right = (new_urx, new_ury)
+
+            writer.add_page(page)
+
+        pdf_path.write_bytes(b"")  # ensure we truncate before writing
+        with pdf_path.open("wb") as f:
+            writer.write(f)
+
+        logger.info(
+            "pdf_cropped",
+            path=str(pdf_path),
+            trim_points=trim_points,
+        )
+    except Exception as e:
+        logger.warning(
+            "pdf_crop_failed",
+            path=str(pdf_path),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 def generate_and_save_pdf_report(
@@ -151,6 +205,7 @@ def generate_and_save_pdf_report(
 
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         _html_to_pdf(html_content, pdf_path)
+        _crop_pdf_borders(pdf_path)
 
         pdf_bytes = pdf_path.read_bytes()
         size = len(pdf_bytes)

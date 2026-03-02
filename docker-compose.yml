@@ -42,6 +42,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./artifacts:/app/artifacts
+      - ./templates:/app/templates
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,6 +78,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./artifacts:/app/artifacts
+      - ./templates:/app/templates
     depends_on:
       postgres:
         condition: service_healthy

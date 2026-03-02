@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
 
-ENDPOINT = "http://localhost:8000/audits"
+ENDPOINT = os.getenv("AUDIT_API_URL", "http://localhost:8000/audits")
 
 
 def main() -> None:
@@ -14,11 +15,15 @@ def main() -> None:
         sys.exit(1)
 
     body = json.dumps({"url": url, "mode": "standard"}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("API_SECRET_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
 
     req = urllib.request.Request(
         ENDPOINT,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
 

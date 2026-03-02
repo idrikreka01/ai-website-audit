@@ -130,7 +130,7 @@ def main() -> None:
 
     # Open in browser
     if not args.no_open:
-        url = output_path.as_uri()
+        url = output_path.resolve().as_uri()
         logger.info("Opening in browser: %s", url)
         webbrowser.open(url)
     else:

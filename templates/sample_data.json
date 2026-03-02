@@ -38,7 +38,7 @@
       "icon": "heart",
       "color": "#334155",
       "phase_color": "#6366f1",
-      "buyer_question": "Does the page give enough proof to prove its what I need",
+      "buyer_question": "Does the page give enough proof to prove its what I needˮ",
       "subtitle": "Building Trust In Products"
     },
     {
@@ -63,8 +63,8 @@
   "awareness": {
     "intro": {
       "callout": "This phase is all about your first impression. If you lose them here, the rest of your website never gets a chance to do its job.",
-      "heading": "The impact of a strong first impression:",
-      "body": "When it comes to making a great first impression, you really don't get a second chance. Think about it: buyers will take just a few seconds to glance at your homepage and decide if they want to stick around. If they can't quickly understand what you do or what you offer, they won't spend time trying to figure it out. Instead, they'll likely just open a new tab and move on, missing out on the chance to learn about your products, offers, and brand story. A lackluster first impression can not only confuse potential customers but can also limit your audience right from the start.",
+      "heading": "Where 95% of brands leak potential revenue",
+      "body": "When it comes to making a great first impression, you really don't get a second chance. Think about it: buyers will take just a few seconds to glance at your homepage and decide if they want to stick around. When buyers can't quickly understand what you sell and why it's important for their specific needs, they won't spend time trying to figure it out. Instead, they'll look for another solution, even if your products were exactly what they needed. Most buyers leave storefronts because they don't answer the burning question every buyer has in their head: \"does this product or brand fit my needs\". Making your ideal customer, transformation, and direct benefits of your products crystal clear can drastically increase conversions and lead to less site abandonments.",
       "warning": "When clarity is missing, buyers don't assume anything is wrong. They simply assume your brand not for them."
     },
     "audit_tables": [
@@ -259,9 +259,9 @@
   "consideration": {
     "intro": {
       "callout": "This stage creates confidence and moves buyers forward either toward buying your product or exploring other options",
-      "heading": "The impact of strong social proof",
-      "body": "When buyers reach the Consideration stage, they begin weighing whether your offer is truly worth their time. At this point, your product pages need to do a great job of clearing up any uncertainties. It's all about showcasing the value of what you're offering and helping potential customers feel confident that choosing you is the right move. If this part of the process isn't strong, it's not that buyers aren't interested; they just don't feel convinced yet. Even a small gap in clarity can be a big problem, affecting your sales long before you see the numbers reflected in your analytics.",
-      "warning": "Most buyers are already interested. They just need a reason to believe your brand is the best option for them."
+      "heading": "The simpler the checkout, the easier the sale:",
+      "body": "When buyers reach the Consideration stage, they have already passed your first impression and decided your brand might be what they are looking for. Now they are evaluating the product itself and looking for proof that it will work for their specific need. At this point, the job of the product page is to remove skepticism by answering questions before they are asked. What is it, who is it for, how does it work, what results should I expect, how do I use it, what are the risks, and what do other real customers say. If this layer is missing, buyers are not rejecting your brand. They are stalling because one gap in clarity or credibility makes the final purchase impulse feel uncertain. In analytics, it looks like an abandoned session. In reality, it is an unaddressed objection that quietly stops the sale.",
+      "warning": "Buyers donʼt stop wanting your product. They leave checkouts when the process feels too slow or difficult."
     },
     "audit_tables": [
       {
@@ -446,7 +446,7 @@
     "intro": {
       "callout": "This stage removes friction from the buying process or turns ready buyers into hesitant ones",
       "heading": "The simpler the checkout, the easier the sale:",
-      "body": "By the time buyers get to the Conversion stage, they've already made up their minds that your product is worth it. Now, their focus shifts from what they're buying to how easy it is to get through the final steps. If there's any delay, extra decision to make, or confusing screen, it can really throw them off and turn an eager buyer into someone who hesitates. The smoother and quicker the whole experience feels, the more likely people are to follow through and complete the purchase.",
+      "body": "By the time buyers reach the Conversion stage, Awareness and Consideration have done their job. They believe your brand is for them, they want your product, and they are ready to buy. Now the only job of your store is to make purchasing feel fast, effortless, and impulsive. Every extra step, decision, form field, confusing screen, unclear cost, or delay introduces doubt and gives buyers time to hesitate. High converting platforms like Amazon and TikTok Shop win because checkout is nearly instant. With saved payment and pre filled details, buying can be one or two clicks from cart to confirmation. Your store should aim for that same feeling of momentum from cart to doorstep. When the path is smooth, more buyers finish with the purchase. When it is slow or complicated, sales quietly disappear.",
       "warning": "Buyers don't stop wanting your product. They leave checkouts when the process feels too slow or difficult."
     },
     "audit_tables": [
@@ -601,8 +601,8 @@
   "retention": {
     "intro": {
       "callout": "Retention decides whether your business compounds as you grow, or starts from zero every month.",
-      "heading": "Retention is the engine to long term growth:",
-      "body": "The first purchase isn't the endgame; it's just the beginning. When someone makes that initial buy, they have two paths: they might fade away, or they might become a loyal supporter who boosts your revenue without you needing to spend more on ads. Acquiring customers requires your time, effort, and money, but building strong relationships with them maximizes the value of what you've already invested. It's like taking the energy you used to win them over and transforming it into ongoing momentum that doesn't cost you anything extra. A business that focuses on keeping its customers tends to grow steadily and predictably, while one that struggles with retention finds itself starting over each month.",
+      "heading": "The growth lever most brands ignore:",
+      "body": "The customer journey does not end after the first purchase. Once someone buys, they either drift away or they come back when it is time to reorder, replace, or try something new. Winning new customers always costs time and money, but repeat customers come with zero new acquisition cost, which means higher profit on every future order they make. Most compounding growth in e commerce comes from what happens after checkout, not before. Retention is where a brand stops renting revenue from ads and starts owning it. Brands that prioritize retention build steadier revenue and stronger ROI, while brands that neglect it often find themselves restarting every month and relying on new acquisition to survive.",
       "warning": "Most growth problems aren't traffic problems. They're retention problems that compound over time."
     },
     "score": "N/A",
@@ -638,39 +638,39 @@
     ]
   },
   "core_revenue_flows": {
-    "heading_note": "These flows prevent revenue from slipping through the cracks. Missing even one flow loses you potential revenue.",
+    "heading_note": "This is another hidden expense most stores never track. Every missed follow up and repeat purchase is a cost you already paid.",
     "flows": [
       {
         "name": "Checkout Recovery Flow",
-        "description": "Recovers sales from buyers who started checkout but didn't finish."
+        "description": "Recovers orders from shoppers who started checkout but did not finish."
       },
       {
         "name": "Cart Abandonment Recovery Flow",
-        "description": "Brings back shoppers who added items but left before purchasing."
+        "description": "Follows up with shoppers who added items but left before checkout."
       },
       {
         "name": "Browse Abandonment Recovery Flow",
-        "description": "Re-engages visitors who viewed products but didn't take action."
+        "description": "Follows up with visitors who viewed products but left without taking action."
       },
       {
         "name": "Post Purchase Flow",
-        "description": "Increases repeat purchases by staying in front of customers after they buy."
+        "description": "Improves retention by setting expectations and keeping customers informed after purchase"
       },
       {
-        "name": "Welcome Flow",
-        "description": "Builds trust with new opt-in subscribers so they feel confident buying."
+        "name": "Initial Welcome Flow",
+        "description": "Introduces the brand to new subscribers and answers basic questions before they buy."
       },
       {
-        "name": "Win Back Flow",
-        "description": "Reactivates past customers who haven't purchased in a while."
+        "name": "Purchase Win-Back Flow",
+        "description": "Reaches past customers who have not purchased in a while."
       },
       {
-        "name": "Upsell Flow",
-        "description": "Increases average order value with relevant follow-up offers."
+        "name": "Custom Product Upsell Flow",
+        "description": "Shows relevant add ons or next steps based on what someone bought."
       },
       {
-        "name": "Review Capture Flow",
-        "description": "Prompts customers to leave reviews post-purchase."
+        "name": "Review Capture Flow Post Purchase",
+        "description": "Asks customers for a review after delivery or after they have had time to try it."
       }
     ]
   },

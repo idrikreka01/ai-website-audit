@@ -875,6 +875,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             session_id=str(session_uuid),
         )
 
+    pdf_uri = None
     try:
         pdf_uri = generate_and_save_pdf_report(session_uuid, domain, repository)
         if pdf_uri:
@@ -896,3 +897,33 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             error=str(e),
             error_type=type(e).__name__,
         )
+
+    if config.telegram_bot_token and config.telegram_chat_id and config.report_base_url:
+        base = config.report_base_url.rstrip("/")
+        report_link = f"{base}/audits/{session_uuid}/report/pdf"
+        if not pdf_uri:
+            report_link += "?regenerate=true"
+        try:
+            message = f"""✅ <b>Audit report ready</b>
+
+🌐 <b>URL:</b> {url}
+🆔 <b>Session:</b> {str(session_uuid)[:8]}...
+
+📄 <a href="{report_link}">View report (PDF)</a>"""
+            send_telegram_message(
+                bot_token=config.telegram_bot_token,
+                chat_id=config.telegram_chat_id,
+                message=message,
+                parse_mode="HTML",
+            )
+            logger.info(
+                "telegram_report_link_sent",
+                session_id=str(session_uuid),
+            )
+        except Exception as e:
+            logger.warning(
+                "telegram_report_link_failed",
+                session_id=str(session_uuid),
+                error=str(e),
+                error_type=type(e).__name__,
+            )
