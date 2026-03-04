@@ -21,9 +21,17 @@ import logging
 import sys
 import webbrowser
 from pathlib import Path
+from uuid import UUID
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from report_data_from_answers import build_report_data
 from template_data_adapter import ensure_template_data
+from shared.db import get_db_session
+from shared.repository import AuditRepository
+from worker.report_generator import generate_audit_report
 
 try:
     from jinja2 import Environment, FileSystemLoader
@@ -95,6 +103,12 @@ def main() -> None:
         help="Artifact session root to build report data from answers.json files",
     )
     parser.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Audit session UUID to load report data from the database",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default=str(OUTPUT_FILE),
@@ -113,12 +127,28 @@ def main() -> None:
     )
 
     # Load / Build data
-    data_path = Path(args.data)
-    if args.answers_session_root:
-        data = build_report_data(data_path, Path(args.answers_session_root))
-        logger.info("Built report data from answers at %s", args.answers_session_root)
+    if args.session_id:
+        try:
+            session_id = UUID(args.session_id)
+        except ValueError:
+            logger.error("Invalid session_id %s (must be a UUID)", args.session_id)
+            sys.exit(1)
+
+        with get_db_session() as db_session:
+            repository = AuditRepository(db_session)
+            data = generate_audit_report(session_id, repository)
+
+        if "error" in data:
+            logger.error("Failed to generate report for session %s: %s", args.session_id, data.get("error"))
+            sys.exit(1)
+        logger.info("Loaded report data from database for session %s", args.session_id)
     else:
-        data = load_data(data_path)
+        data_path = Path(args.data)
+        if args.answers_session_root:
+            data = build_report_data(data_path, Path(args.answers_session_root))
+            logger.info("Built report data from answers at %s", args.answers_session_root)
+        else:
+            data = load_data(data_path)
     data = ensure_template_data(data)
 
     # Render

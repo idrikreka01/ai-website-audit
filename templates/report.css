@@ -754,7 +754,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 35px;
+  font-size: 28px;
   font-weight: 600;
   color: var(--color-navy);
 }
@@ -769,7 +769,7 @@ a {
 .phase-intro-callout {
   background: rgba(255, 255, 255, 0.95);
   border-radius: var(--radius-md);
-  padding: 1.2rem 1.45rem;
+  padding: 10px;
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -825,27 +825,26 @@ a {
 
 /* Warning callout (within dark section) */
 .phase-warning {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-md);
   padding: 10px; 
   display: flex;
   align-items: flex-start;
   gap: 0.9rem;
   font-size: 13px;
-  color: var(--color-gray-200);
+  color: white;
   margin:auto;
+  background-color: #374451;
 }
 
 .phase-warning .warning-icon {
   flex-shrink: 0;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   color: var(--color-gray-400);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-top: 1px;
+  margin:auto;
 }
 
 /* Info callout (within dark section, blue/teal tint) */
@@ -943,7 +942,7 @@ a {
 .audit-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 9px;
+  font-size: 13px;
   border: 1px solid var(--color-gray-200);
 }
 
@@ -967,12 +966,12 @@ a {
 }
 
 .audit-table tbody td {
-  padding: 0.827rem 1.102rem;
+  padding: 5px;
   border-bottom: 1px solid var(--color-gray-200);
   vertical-align: top;
   color: #1f2937;
   line-height: 1.5;
-  font-weight: bold;
+  font-weight: 500;
 }
 
 .audit-table tbody tr:nth-child(even) {
@@ -1166,9 +1165,9 @@ a {
 }
 
 .rating-bar-label {
-  flex: 0 0 214px;
+  flex: 0 0 140px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   color: #253646;
   background: var(--color-gray-50);
   border: 1px solid var(--color-gray-200);
@@ -1237,10 +1236,10 @@ a {
 }
 
 .score-pill {
-  background: var(--color-navy);
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 35%), repeating-linear-gradient(to right, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px 62px), linear-gradient(90deg, #062141 0%, #12406f 58%, #1f5f97 100%);
   color: var(--color-white);
   font-size: 18px;
-  font-weight: regular;
+  font-weight: 800;
   padding: 0.52rem 0.95rem;
   border-radius: 6px;
   min-width: 102px;
@@ -1410,14 +1409,13 @@ a {
   column-gap: 2rem;
   padding-left: 0px;
   padding-right: 100px;
-  margin-bottom: 0.16rem;
 }
 
 .flow-labels-top .flow-label-item {
   font-size: 10px;
   color: #465668;
   font-weight: 600;
-  text-align: center;
+  text-align: left;
   line-height: 1.2;
   padding: 0 0.12rem;
 }
@@ -1435,7 +1433,7 @@ a {
   font-size: 10px;
   color: #465668;
   font-weight: 600;
-  text-align: center;
+  text-align: left;
 }
 
 .flow-label-item {
@@ -1453,9 +1451,12 @@ a {
 }
 
 .flow-svg .side-label {
-  font-size: 13px;
+  font-size: 1rem; 
   font-weight: 600;
   fill: #465668;
+  font-family: var(--font-sans);
+  line-height: 1.2;
+  padding: 0 0.12rem;
 }
 
 .flow-svg .day-label {
@@ -1538,7 +1539,7 @@ a {
 
 /* What most brands do v2 */
 .brands-comparison-v2 {
-  margin-bottom: 20px;
+  margin-bottom: 60px;
   padding: 0 1.15rem;
 }
 
@@ -2260,11 +2261,11 @@ a {
 }
 
 .section-cta h2 {
-  font-size: 34px;
-  font-weight: 800;
+  font-size: 36px;
+  font-weight: 600;
   line-height: 1.1;
   margin-bottom: 20px;
-  text-align: center;
+  text-align: left;
 }
 
 .cta-benefits {
@@ -2272,7 +2273,7 @@ a {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 20px;
-  background: rgba(116, 132, 153, 0.56);
+  background: #47525D;
   border-radius: 6px;
   padding: 1.45rem 1.55rem;
 }
@@ -2318,8 +2319,8 @@ a {
 }
 
 .cta-qr-placeholder {
-  width: 152px;
-  height: 152px;
+  width: 100px;
+  height: auto;
   background: var(--color-white);
   border-radius: 3px;
   display: flex;
@@ -2328,6 +2329,7 @@ a {
   font-size: 1rem;
   color: var(--color-gray-500);
   flex-shrink: 0;
+  margin-bottom: 50px;
 }
 
 .cta-qr-placeholder img {
@@ -2340,9 +2342,10 @@ a {
 /* Footer contact */
 .cta-footer {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   margin-top: 0;
+  gap: 40px;  
 }
 
 .cta-contact {
@@ -2359,28 +2362,29 @@ a {
 }
 
 .cta-contact-icon {
-  width: 34px;
-  height: 34px;
+  width: 24px;
+  height: 24px;
   background: rgba(255, 255, 255, 0.88);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #153251;
+  margin:5px; 
 }
 
 .cta-prepared-block {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 4rem;
 }
 
 .cta-logo-placeholder {
   color: var(--color-white);
   display: flex;
   align-items: center;
-  width: 106px;
-  height: 106px;
+  width: 80px;
+  height: auto;
 }
 
 .cta-prepared {

@@ -173,8 +173,13 @@ def _map_questions_onto_base_tables(
 
         t_idx, r_idx = best_ref
         mapped_row = tables[t_idx]["rows"][r_idx]
-        mapped_row["pass"] = _to_bool_result(raw_result)
-        mapped_row["is_unknown"] = raw_result == "unknown"
+        bool_result = _to_bool_result(raw_result)
+        if bool_result is None and raw_result == "unknown":
+            mapped_row["pass"] = False
+            mapped_row["is_unknown"] = True
+        else:
+            mapped_row["pass"] = bool_result
+            mapped_row["is_unknown"] = False
         mapped_row["fix_type"] = _fix_type_from_severity(int(q.get("severity", 0) or 0))
         used_rows.add(best_ref)
 
@@ -188,8 +193,15 @@ def _build_phase_rating(
     category_scores_by_stage: dict[str, Any],
     stage_scores: dict[str, Any],
 ) -> dict[str, Any]:
-    valid = [q for q in phase_questions if _to_bool_result(str(q.get("result", ""))) is not None]
-    passed = sum(1 for q in valid if _to_bool_result(str(q.get("result", ""))) is True)
+    valid: list[dict[str, Any]] = []
+    passed = 0
+    for q in phase_questions:
+        raw = str(q.get("result", "")).strip().lower()
+        if raw not in ("pass", "fail", "unknown"):
+            continue
+        valid.append(q)
+        if raw == "pass":
+            passed += 1
     total = len(valid)
     failed = total - passed
 

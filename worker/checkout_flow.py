@@ -1322,6 +1322,7 @@ async def _capture_page_payloads(
             )
         page_id = page_data["id"]
 
+        await asyncio.sleep(2)
         visible_text = await page.inner_text("body")
         visible_text = normalize_whitespace(visible_text)
 

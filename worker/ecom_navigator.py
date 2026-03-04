@@ -967,6 +967,7 @@ class UniversalEcomNavigator:
             elif page_type == "checkout":
                 self.result.checkout_page_id = page_id
 
+            await asyncio.sleep(2)
             visible_text = await page.inner_text("body")
             visible_text = normalize_whitespace(visible_text)
 

@@ -194,7 +194,11 @@ def _generate_actionable_findings(
     Returns list of dicts with actionable_finding and impact, sorted by impact priority.
     Replaces [X] placeholders with actual load times from pages.
     """
-    failed_questions = [q for q in questions if (q.get("result") or "").lower() == "fail"]
+    failed_questions = [
+        q
+        for q in questions
+        if (q.get("result") or "").lower() in ("fail", "unknown")
+    ]
 
     pages = repository.get_pages_by_session_id(session_id)
     page_load_times = {}
@@ -222,9 +226,18 @@ def _generate_actionable_findings(
     for question in failed_questions:
         tier = question.get("tier", 1)
         severity = question.get("severity", 1)
-        exact_fix = question.get("exact_fix", "")
+        raw_result = (question.get("result") or "").lower()
+        exact_fix = question.get("exact_fix", "") or ""
         category = question.get("bar_chart_category", "")
         page_type = question.get("page_type", "")
+
+        if raw_result == "unknown":
+            suffix = (
+                " We could not confidently verify this requirement from the current "
+                "crawl, so this check is treated as failed until it can be proven "
+                "and documented."
+            )
+            exact_fix = (exact_fix.rstrip() + " " + suffix).strip()
 
         if not exact_fix:
             continue
