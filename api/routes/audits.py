@@ -11,7 +11,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 
 from api.auth import verify_api_token
@@ -31,12 +31,18 @@ from api.schemas import (
 from api.services.audit_service import AuditService
 from shared.logging import bind_request_context, get_logger
 
+from jinja2 import Environment, FileSystemLoader
+from pathlib import Path
+from tools.template_data_adapter import ensure_template_data
+
 logger = get_logger(__name__)
 router = APIRouter(
     prefix="/audits",
     tags=["audits"],
     dependencies=[Depends(verify_api_token)],
 )
+
+TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
 
 
 def get_audit_service(session: Annotated[Session, Depends(get_db_session)]) -> AuditService:
@@ -454,6 +460,75 @@ def get_audit_report(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate JSON report: {str(e)}",
+        )
+
+
+@router.get(
+    "/{session_id}/report/html",
+    response_class=HTMLResponse,
+    summary="Get HTML report for audit session",
+)
+def get_audit_report_html(
+    session_id: UUID,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> HTMLResponse:
+    bind_request_context(session_id=str(session_id))
+
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_html_report", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+
+    try:
+        from worker.report_generator import generate_audit_report
+        from worker.repository import AuditRepository as WorkerAuditRepository
+
+        repository = WorkerAuditRepository(service.repository.session)
+        report_data = generate_audit_report(session_id, repository)
+
+        if "error" in report_data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=report_data.get("error", "Session not found"),
+            )
+
+        adapted = ensure_template_data(report_data)
+
+        def _chunk(seq, n):
+            seq = seq or []
+            return [seq[i : i + n] for i in range(0, len(seq), n)]
+
+        env = Environment(
+            loader=FileSystemLoader(str(TEMPLATES_DIR)),
+            autoescape=False,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+        env.filters["chunk"] = _chunk
+        template = env.get_template("report.html")
+        html = template.render(**adapted)
+
+        logger.info(
+            "html_report_generated",
+            session_id=str(session_id),
+        )
+
+        return HTMLResponse(content=html)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "html_report_generation_failed",
+            session_id=str(session_id),
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate HTML report: {str(e)}",
         )
 
 

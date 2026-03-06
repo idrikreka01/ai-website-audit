@@ -72,12 +72,17 @@ def _render_html(data: dict) -> str:
     if Environment is None or FileSystemLoader is None:
         raise ImportError("jinja2 is required. Install with: pip install jinja2")
 
+    def _chunk(seq, n):
+        seq = seq or []
+        return [seq[i : i + n] for i in range(0, len(seq), n)]
+
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
         autoescape=False,
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["chunk"] = _chunk
     template = env.get_template("report.html")
     rendered = template.render(**data)
     logger.info("template_rendered", chars=len(rendered))

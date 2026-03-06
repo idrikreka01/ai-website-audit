@@ -65,13 +65,17 @@ def load_data(data_path: Path) -> dict:
 
 def render_template(data: dict) -> str:
     """Render report.html with the given data context."""
+    def _chunk(seq, n):
+        seq = seq or []
+        return [seq[i : i + n] for i in range(0, len(seq), n)]
+
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_DIR)),
-        autoescape=False,  # HTML template manages its own escaping
+        autoescape=False,
         trim_blocks=True,
         lstrip_blocks=True,
     )
-
+    env.filters["chunk"] = _chunk
     template = env.get_template("report.html")
     rendered = template.render(**data)
 

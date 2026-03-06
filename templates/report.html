@@ -150,7 +150,7 @@
 
     {% for stage in stages %}
     <div class="stage-card-v2">
-      <div class="stage-card-v2-left" style="background: {{ stage.color }};">
+      <div class="stage-card-v2-left" >
         <div class="stage-card-v2-left-content">
         <h3 class="stage-card-v2-name">{{ stage.name }}</h3>
         <div class="stage-card-v2-subtitle">{{ stage.subtitle }}</div>
@@ -165,7 +165,7 @@
 
     <div class="callout-bottom">
       <div class="callout-bottom-icon">
-         <img src="figures/openbook.png" width="40" height="40"  alt="Callout icon" class="callout-icon-img">
+         <img src="figures/openbook.png" width="60" height="50"  alt="Callout icon" class="callout-icon-img">
       </div>
       <span>Most brands lose cusomers because uncertainty or friction at one of these stages puts customers in &ldquo;comparison mode&rdquo;</span>
     </div>
@@ -184,7 +184,7 @@
     <path d="M21 21L28 28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
   </svg>
   {% elif icon == "Consideration"%}
-  <img src="figures/considerationPhase.png" width="{{ size }}" height="{{ size }}" alt="Consideration icon">
+  <img src="figures/considerationPhase.png" width="35" height="42" alt="Consideration icon">
   {% elif icon == "heart" %}
   <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 32 32" fill="none">
     <!-- Head silhouette -->
@@ -193,8 +193,8 @@
     <path d="M16 21l-4.2-4.2c-1.2-1.2-1.2-3 0-4.2 1.2-1.2 3-1.2 4.2 0 1.2-1.2 3-1.2 4.2 0 1.2 1.2 1.2 3 0 4.2L16 21z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
   {% elif icon == "Conversion" %}
-  <svg width="{{ size }}" height="{{ size }}" viewBox="0 0 32 32" fill="none">
-    <circle cx="16" cy="16" r="12" stroke="none" stroke-width="2.5" fill="#0f172a"/>
+  <svg width="42" height="42" viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="12" stroke="none" stroke-width="2.5" fill="#0e3250"/>
     <path d="M13 10l6 6-6 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
   {% elif icon == "refresh" %}
@@ -243,7 +243,7 @@
       {% endset %}
     {% else %}
       {% set phase_warning_element %}
-        <img src="figures/openbook.png" width="40" height="40" alt="Warning icon" class="warning-icon-img">
+        <img src="figures/openbook.png" width="60" height="50" alt="Warning icon" class="warning-icon-img">
       {% endset %}
     {% endif %}
     <div class="phase-badge">
@@ -254,7 +254,7 @@
     <!-- Phase callout -->
     <div class="phase-intro-callout">
       <div class="phase-intro-callout-icon">
-        <img src="figures/openbook.png" width="40" height="40" alt="Callout icon" class="callout-icon-img">
+        <img src="figures/openbook.png" width="60" height="50" alt="Callout icon" class="callout-icon-img">
       </div>
       <span>This phase is about your first impression. If you lose buyers at this
 stage of the decision process, the rest of your site gets overlooked.</span>
@@ -308,7 +308,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
         </tr>
       </thead>
       <tbody>
-        {% for item in table.rows %}
+        {% for item in table.rows[:8] %}
         <tr>
           <td>{{ item.text }}</td>
           <td class="td-pass">
@@ -334,7 +334,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
   <section class="section-rating">
     <div class="rating-header-v2">
       <div class="rating-header-icon">
-        {{ phase_icon_svg(phase_name, 32) }}
+        {{ phase_icon_svg(phase_name, 42) }}
       </div>
       <h2 class="rating-header-title"><strong>{{ phase_name }}</strong> <span class="rating-header-label">Rating</span></h2>
     </div>
@@ -358,9 +358,9 @@ stage of the decision process, the rest of your site gets overlooked.</span>
         <div class="score-pill">{{ rating.overall_score }}/{{ rating.max_score }}</div>
         <div class="score-metric-pill">
           <div class="score-metric-pill-icon score-metric-pill-icon--info">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M8 4v5M8 11v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="7" fill="#8799a6" stroke-width="1.5"/>
+              <path d="M8 4v5M8 11v1" stroke="#f2f2f2" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
           </div>
           <div class="score-metric-pill-text">
@@ -371,9 +371,9 @@ stage of the decision process, the rest of your site gets overlooked.</span>
         </div>
         <div class="score-metric-pill">
           <div class="score-metric-pill-icon score-metric-pill-icon--check">
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
-              <path d="M5 8l2.5 2.5L11 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="7" fill="#8799a6" stroke-width="1.5"/>
+              <path d="M5 8l2.5 2.5L11 6" stroke="#f2f2f2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </div>
           <div class="score-metric-pill-text">
@@ -396,9 +396,10 @@ stage of the decision process, the rest of your site gets overlooked.</span>
        MACRO: Phase Change Log
        ============================================================ -->
   {% macro phase_changelog(phase_name, entries) %}
+  {% if entries and entries|length > 0 %}
+    {% for chunk in entries|chunk(5) %}
   <section class="section-changelog">
-    <h2>Recommended Change Log</h2>
-
+    <h2>{% if loop.first %}Recommended Change Log{% else %}{% endif %}</h2>
     <table class="changelog-table-v2">
       <thead>
         <tr>
@@ -407,22 +408,35 @@ stage of the decision process, the rest of your site gets overlooked.</span>
         </tr>
       </thead>
       <tbody>
-        {% if entries and entries|length > 0 %}
-          {% for entry in entries %}
-          <tr>
-            <td>{{ entry.item }}</td>
-            <td>{{ entry.impact if entry.impact is defined else "" }}</td>
-          </tr>
-          {% endfor %}
-        {% else %}
-          <tr>
-            <td>No high-impact findings for this phase.</td>
-            <td>Low</td>
-          </tr>
-        {% endif %}
+        {% for entry in chunk %}
+        <tr>
+          <td>{{ entry.item }}</td>
+          <td>{{ entry.impact if entry.impact is defined else "" }}</td>
+        </tr>
+        {% endfor %}
       </tbody>
     </table>
   </section>
+    {% endfor %}
+  {% else %}
+  <section class="section-changelog">
+    <h2>Recommended Change Log</h2>
+    <table class="changelog-table-v2">
+      <thead>
+        <tr>
+          <th class="col-finding">Actionable Findings</th>
+          <th class="col-impact">Impact</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>No high-impact findings for this phase.</td>
+          <td>Low</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
   {% endmacro %}
 
 
@@ -593,7 +607,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
         </svg>
       </div>
-      <h2><strong>Core Revenue</strong> <span class="light">Flows</span></h2>
+      <h2>Core Revenue Flows</h2>
     </div>
 
     <div class="revenue-flows-callout">
@@ -615,7 +629,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
        SECTION 16: Website Performance Summary
        Placeholder vars: performance_summary.awareness/consideration/conversion/retention, final_thoughts
        ============================================================ -->
-  <section class="section-summary">
+  <section class="section-summary" >
     <h2>Your Store's Report Card</h2>
 
     {% set phase_rows = [
@@ -799,8 +813,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)" stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>One Fixed Price</span>
@@ -808,8 +822,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)"  stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>Performance Or You Don't Pay</span>
@@ -817,8 +831,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)"  stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>No Hidden Fees or Charges</span>
@@ -826,8 +840,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)"  stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>Completed in 14 Days Or Less</span>
@@ -835,8 +849,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)" stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>No Monthly Retainers</span>
@@ -844,8 +858,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)"  stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>Storefront Access Required</span>
@@ -853,8 +867,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)"  stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>No Long Term Contracts</span>
@@ -862,8 +876,8 @@ stage of the decision process, the rest of your site gets overlooked.</span>
       <div class="cta-benefit">
         <span class="cta-benefit-icon">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="9" fill="rgba(255,255,255,0.15)" stroke-width="1"/>
-            <path d="M6 10l3 3 5-5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="10" cy="10" r="9" fill="#a6afb6" stroke-width="1"/>
+            <path d="M6 10l3 3 5-5.5" stroke="#505f69" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </span>
         <span>Fully Customized To Your Brand</span>
@@ -871,7 +885,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
     </div>
 
     <!-- Guarantee text -->
-    <div class="cta-guarantee">If your conversion rate doesn't increase in 30 days, you don't pay</div>
+    <div class="cta-guarantee">If your conversion rate doesn't <br> increase in 30 days, you don't pay</div>
 
     <!-- Scan / QR section -->
     <div class="cta-scan-section">
@@ -963,7 +977,7 @@ stage of the decision process, the rest of your site gets overlooked.</span>
   <!-- ============================================================
        SECTION 21: Founder Note (Final Page)
        ============================================================ -->
-  <section class="section-founder-note">
+  <section class="section-founder-note" style="background-color: #eceef1">
     {% set brand_raw = (meta.brand_name if meta.brand_name is defined and meta.brand_name else meta.site_url) %}
     {% set brand_clean = brand_raw | replace('www.', '') %}
     {% if '.' in brand_clean %}

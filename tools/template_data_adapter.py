@@ -216,10 +216,7 @@ def _build_phase_rating(
             }
         )
 
-    if phase in stage_scores:
-        overall = round(float(stage_scores[phase]))
-    else:
-        overall = round((passed / total) * 100) if total else 0
+    overall = round((passed / total) * 100) if total else 0
 
     return {
         "categories": categories,
