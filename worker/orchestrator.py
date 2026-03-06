@@ -24,6 +24,27 @@ from worker.session_status import compute_session_status, session_low_confidence
 logger = get_logger(__name__)
 
 
+def _send_telegram_step(session_uuid: UUID, url: str, message: str) -> None:
+    config = get_config()
+    if not config.telegram_bot_token or not config.telegram_chat_id:
+        return
+    try:
+        short_id = str(session_uuid)[:8]
+        full_message = f"🆔 <b>Session:</b> {short_id}...\n\n{message}"
+        send_telegram_message(
+            bot_token=config.telegram_bot_token,
+            chat_id=config.telegram_chat_id,
+            message=full_message,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning(
+            "telegram_step_failed",
+            session_id=str(session_uuid),
+            error=str(e),
+        )
+
+
 def compute_ai_audit_score(
     session_uuid: UUID, domain: str, repository: AuditRepository
 ) -> Optional[dict]:
@@ -352,6 +373,7 @@ def _run_audit_evaluation_for_page_types(
     domain: str,
     repository: AuditRepository,
     page_types: list[str] = None,
+    url: str = "",
 ) -> None:
     """
     Run audit evaluation for page types. If page_types is None, auto-discover from artifacts.
@@ -361,6 +383,7 @@ def _run_audit_evaluation_for_page_types(
         domain: Domain name
         repository: Audit repository
         page_types: Optional list of page types to evaluate. If None, discovers from artifacts.
+        url: Original audit URL (for Telegram step messages).
     """
     from audit_evaluator import AuditEvaluator
     from get_questions_by_page_type import get_questions_by_page_type
@@ -423,6 +446,11 @@ def _run_audit_evaluation_for_page_types(
                 page_type=page_type,
                 session_id=str(session_uuid),
             )
+            _send_telegram_step(
+                session_uuid,
+                url,
+                f"📤 <b>Starting to send questions</b> for <b>{page_type}</b>...",
+            )
 
             normalized_page_type = "product" if page_type == "pdp" else page_type
             questions = get_questions_by_page_type(normalized_page_type)
@@ -451,6 +479,11 @@ def _run_audit_evaluation_for_page_types(
                 page_type=page_type,
                 results_count=len(results),
                 session_id=str(session_uuid),
+            )
+            _send_telegram_step(
+                session_uuid,
+                url,
+                f"✅ <b>Questions finished</b> for <b>{page_type}</b> ({len(results)} results).",
             )
 
             repository.create_log(
@@ -812,8 +845,15 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
 
         return
 
-    _run_audit_evaluation_for_page_types(session_uuid, domain, repository, page_types=None)
+    _run_audit_evaluation_for_page_types(
+        session_uuid, domain, repository, page_types=None, url=url
+    )
 
+    _send_telegram_step(
+        session_uuid,
+        url,
+        "📊 <b>Checking confidence score</b>...",
+    )
     try:
         ai_audit_data = compute_ai_audit_score(session_uuid, domain, repository)
         if ai_audit_data:
@@ -866,6 +906,11 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 session_id=str(session_uuid),
                 overall_percentage=score_data["overall_percentage"],
             )
+        _send_telegram_step(
+            session_uuid,
+            url,
+            f"📊 <b>Confidence score computed:</b> {score_data['overall_percentage']}%",
+        )
 
     except Exception as e:
         logger.error(
@@ -875,6 +920,11 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
             session_id=str(session_uuid),
         )
 
+    _send_telegram_step(
+        session_uuid,
+        url,
+        "📄 <b>Starting to prepare the PDF</b>...",
+    )
     pdf_uri = None
     try:
         pdf_uri = generate_and_save_pdf_report(session_uuid, domain, repository)
@@ -904,7 +954,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
         if not pdf_uri:
             report_link += "?regenerate=true"
         try:
-            message = f"""✅ <b>Audit report ready</b>
+            message = f"""✅ <b>PDF is good to go!</b>
 
 🌐 <b>URL:</b> {url}
 🆔 <b>Session:</b> {str(session_uuid)[:8]}...
@@ -927,3 +977,17 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 error=str(e),
                 error_type=type(e).__name__,
             )
+    else:
+        missing = []
+        if not config.telegram_bot_token:
+            missing.append("TELEGRAM_BOT_TOKEN")
+        if not config.telegram_chat_id:
+            missing.append("TELEGRAM_CHAT_ID")
+        if not config.report_base_url:
+            missing.append("REPORT_BASE_URL")
+        logger.warning(
+            "telegram_report_link_skipped",
+            session_id=str(session_uuid),
+            reason="missing_config",
+            missing_env_vars=missing,
+        )
