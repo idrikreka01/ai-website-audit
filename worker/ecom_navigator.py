@@ -58,6 +58,7 @@ class NavigationResult:
 
     product_url: Optional[str] = None
     cart_url: Optional[str] = None
+    cart_state_type: str = "not_found"
     checkout_url: Optional[str] = None
     product_status: str = "not_found"
     cart_status: str = "not_found"
@@ -81,13 +82,17 @@ class UniversalEcomNavigator:
         session_id: UUID,
         repository: AuditRepository,
         viewport: str = "desktop",
-        headless: bool = True,
+        headless: Optional[bool] = None,
     ):
         self.base_url = base_url
         self.session_id = session_id
         self.repository = repository
         self.viewport = viewport
-        self.headless = headless
+        if headless is None:
+            config = get_config()
+            self.headless = config.browser_headless
+        else:
+            self.headless = headless
         self.domain = urlparse(base_url).netloc or ""
         self.result = NavigationResult()
 
@@ -408,6 +413,271 @@ class UniversalEcomNavigator:
         return has_h1 and has_price and has_add_to_cart
 
     async def _handle_variants(self, page: Page) -> None:
+        """Dispatch to platform-specific variant handlers."""
+        platform, signals = await self._detect_platform(page)
+        logger.info("variant_platform_detected", platform=platform, signals=signals)
+        self.repository.create_log(
+            session_id=self.session_id,
+            level="info",
+            event_type="navigation",
+            message="Variant platform detected",
+            details={"platform": platform, "signals": signals},
+        )
+
+        try:
+            if platform == "shopify":
+                await self._handle_variants_shopify(page)
+            elif platform == "woocommerce":
+                await self._handle_variants_woocommerce(page)
+            else:
+                await self._handle_variants_generic(page)
+        except Exception as e:
+            logger.warning("variant_platform_handling_failed", error=str(e), platform=platform)
+
+    async def _detect_platform(self, page: Page) -> tuple[str, list[str]]:
+        """Detect ecommerce platform from DOM, scripts, and URL."""
+        signals: list[str] = []
+        try:
+            html = await page.content()
+        except Exception:
+            html = ""
+
+        url_lower = (page.url or "").lower()
+
+        shopify_indicators = [
+            'form[action*="/cart/add"]',
+            "[data-product-id]",
+            "[data-product-handle]",
+            "[id*='shopify-section']",
+            "[class*='shopify-section']",
+            "script[src*='cdn.shopify.com']",
+        ]
+        woocommerce_indicators = [
+            "form.variations_form",
+            "[class*='woocommerce']",
+            "script[src*='woocommerce']",
+            "script[src*='wc-ajax']",
+            'select[name^="attribute_"]',
+            ".single_add_to_cart_button",
+        ]
+
+        for selector in shopify_indicators:
+            try:
+                count = await page.locator(selector).count()
+                if count > 0:
+                    signals.append(f"dom:{selector}")
+            except Exception:
+                continue
+
+        for selector in woocommerce_indicators:
+            try:
+                count = await page.locator(selector).count()
+                if count > 0:
+                    signals.append(f"dom:{selector}")
+            except Exception:
+                continue
+
+        if "cdn.shopify.com" in html:
+            signals.append("html:cdn.shopify.com")
+        if "Shopify.theme" in html or "window.Shopify" in html:
+            signals.append("html:shopify-global")
+
+        if "woocommerce" in html.lower() or "wc_add_to_cart_params" in html:
+            signals.append("html:woocommerce")
+        if "wc-ajax" in html.lower():
+            signals.append("html:wc-ajax")
+
+        parsed = urlparse(url_lower)
+        if "myshopify.com" in parsed.netloc:
+            signals.append("url:myshopify.com")
+
+        platform = "generic"
+        if any("shopify" in s for s in signals):
+            platform = "shopify"
+        elif any("woocommerce" in s or "wc-ajax" in s for s in signals):
+            platform = "woocommerce"
+
+        return platform, signals
+
+    async def _stabilize_pdp_before_atc(self, page: Page) -> None:
+        """Stabilize PDP before attempting add-to-cart."""
+        await wait_for_page_ready(page, soft_timeout=10000)
+        await dismiss_popups(page)
+        await scroll_sequence(page)
+        await dismiss_popups(page)
+        await asyncio.sleep(0.5)
+
+    async def _ensure_product_is_purchasable(self, page: Page, platform: str) -> bool:
+        """Best-effort check that product is purchasable.
+
+        Focus on purchase UI region instead of entire body.
+        """
+        sold_out_keywords = ["sold out", "out of stock", "unavailable"]
+
+        if platform == "shopify":
+            container = page.locator('form[action*="/cart/add"]').first
+        elif platform == "woocommerce":
+            container = page.locator("form.variations_form, form.cart").first
+        else:
+            container = page.locator(
+                'form[action*="/cart"], form[action*="/basket"], [class*="product"]'
+            ).first
+
+        try:
+            if await container.count() > 0:
+                region_text = (await container.inner_text()).lower()
+                if any(k in region_text for k in sold_out_keywords):
+                    logger.info("product_not_purchasable_text_signal", platform=platform)
+                    return False
+        except Exception:
+            pass
+
+        disabled_cta_selectors = [
+            'button[disabled][type="submit"]',
+            'button[aria-disabled="true"]',
+            ".is-disabled",
+            ".disabled",
+        ]
+        for selector in disabled_cta_selectors:
+            try:
+                scoped = container.locator(selector) if container else page.locator(selector)
+                locator = scoped.first
+                if await locator.is_visible():
+                    logger.info(
+                        "product_not_purchasable_disabled_cta",
+                        selector=selector,
+                        platform=platform,
+                    )
+                    return False
+            except Exception:
+                continue
+
+        try:
+            if platform == "shopify":
+                form = page.locator('form[action*="/cart/add"]').first
+                hidden_variant_input = form.locator('input[name="id"]')
+                if await hidden_variant_input.count() > 0:
+                    value = await hidden_variant_input.first.get_attribute("value")
+                    if not value or value == "0":
+                        logger.info("product_not_purchasable_missing_variant_id", platform=platform)
+                        return False
+            elif platform == "woocommerce":
+                form = page.locator("form.variations_form").first
+                variation_id_input = form.locator('input[name="variation_id"]')
+                if await variation_id_input.count() > 0:
+                    value = await variation_id_input.first.get_attribute("value")
+                    if not value or value == "0":
+                        logger.info(
+                            "product_not_purchasable_missing_variation_id",
+                            platform=platform,
+                        )
+                        return False
+        except Exception:
+            pass
+
+        return True
+
+    async def _handle_variants_shopify(self, page: Page) -> None:
+        """Shopify-specific variant resolution."""
+        try:
+            form = page.locator('form[action*="/cart/add"]').first
+            if await form.count() == 0:
+                await self._handle_variants_generic(page)
+                return
+
+            selects = await form.locator("select").all()
+            for select in selects:
+                try:
+                    if not await select.is_visible():
+                        continue
+                    options = await select.locator(
+                        "option:not([disabled]):not([value='']):not([value='0'])"
+                    ).all()
+                    if len(options) > 1:
+                        await select.select_option(index=1)
+                        await asyncio.sleep(0.5)
+                except Exception:
+                    continue
+
+            radios = await form.locator('input[type="radio"]:not([disabled])').all()
+            if radios:
+                grouped: dict[str, list] = {}
+                for radio in radios:
+                    try:
+                        if not await radio.is_visible():
+                            continue
+                        name = await radio.get_attribute("name")
+                        if not name:
+                            continue
+                        grouped.setdefault(name, []).append(radio)
+                    except Exception:
+                        continue
+                for group in grouped.values():
+                    try:
+                        await group[0].click(timeout=3000)
+                        await asyncio.sleep(0.5)
+                    except Exception:
+                        continue
+
+            hidden_variant_input = form.locator('input[name="id"]')
+            try:
+                if await hidden_variant_input.count() > 0:
+                    _ = await hidden_variant_input.first.get_attribute("value")
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.warning("shopify_variant_handling_failed", error=str(e))
+            await self._handle_variants_generic(page)
+
+    async def _handle_variants_woocommerce(self, page: Page) -> None:
+        """WooCommerce-specific variant resolution."""
+        try:
+            form = page.locator("form.variations_form").first
+            if await form.count() == 0:
+                await self._handle_variants_generic(page)
+                return
+
+            attribute_selects = await form.locator('select[name^="attribute_"]').all()
+            for select in attribute_selects:
+                try:
+                    if not await select.is_visible():
+                        continue
+                    options = await select.locator("option:not([disabled]):not([value=''])").all()
+                    if len(options) > 1:
+                        await select.select_option(index=1)
+                        await asyncio.sleep(0.7)
+                except Exception:
+                    continue
+
+            variation_id_input = form.locator('input[name="variation_id"]')
+            add_to_cart_button = form.locator(".single_add_to_cart_button").first
+
+            try:
+                if await variation_id_input.count() > 0 or await add_to_cart_button.count() > 0:
+                    for _ in range(6):
+                        resolved = False
+                        if await variation_id_input.count() > 0:
+                            value = await variation_id_input.first.get_attribute("value")
+                            if value and value != "0":
+                                resolved = True
+                        if not resolved and await add_to_cart_button.count() > 0:
+                            try:
+                                if await add_to_cart_button.is_enabled():
+                                    resolved = True
+                            except Exception:
+                                pass
+                        if resolved:
+                            break
+                        await asyncio.sleep(0.5)
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.warning("woocommerce_variant_handling_failed", error=str(e))
+            await self._handle_variants_generic(page)
+
+    async def _handle_variants_generic(self, page: Page) -> None:
         """Handle product variants: selects, radios, swatches.
 
         Only interact with visible elements.
@@ -521,10 +791,26 @@ class UniversalEcomNavigator:
                 self.result.cart_status = "failed"
                 return
 
-            await wait_for_page_ready(page, soft_timeout=10000)
-            await dismiss_popups(page)
+            await self._stabilize_pdp_before_atc(page)
 
-            add_to_cart_success = await self._add_to_cart(page)
+            platform, signals = await self._detect_platform(page)
+            logger.info("add_to_cart_platform_detected", platform=platform, signals=signals)
+            self.repository.create_log(
+                session_id=self.session_id,
+                level="info",
+                event_type="navigation",
+                message="Add to cart platform detected",
+                details={"platform": platform, "signals": signals},
+            )
+
+            if not await self._ensure_product_is_purchasable(page, platform):
+                self.result.errors.append("Product appears not purchasable (sold out or disabled)")
+                self.result.cart_status = "skipped"
+                return
+
+            await self._handle_variants(page)
+
+            add_to_cart_success = await self._add_to_cart(page, platform)
             if not add_to_cart_success:
                 self.result.errors.append("Failed to add product to cart")
                 self.result.cart_status = "failed"
@@ -573,72 +859,237 @@ class UniversalEcomNavigator:
             if context:
                 await context.close()
 
-    async def _add_to_cart(self, page: Page) -> bool:
-        """Add product to cart and confirm success."""
-        add_to_cart_selectors = [
+    async def _find_best_add_to_cart_button(self, page: Page, platform: str) -> Optional[str]:
+        """Find the most likely add-to-cart button."""
+        platform_bias_selectors = []
+        if platform == "shopify":
+            platform_bias_selectors = [
+                'form[action*="/cart/add"] button[type="submit"]',
+                'form[action*="/cart/add"] [name="add"]',
+            ]
+        elif platform == "woocommerce":
+            platform_bias_selectors = [
+                "form.variations_form .single_add_to_cart_button",
+                "form.cart .single_add_to_cart_button",
+            ]
+
+        generic_selectors = [
             'button:has-text("Add to Cart")',
             'button:has-text("Add to Bag")',
             'button:has-text("Add to Basket")',
-            'button:has-text("Add")',
             '[name="add-to-cart"]',
             '[class*="add-to-cart"]',
             '[class*="addToCart"]',
         ]
 
-        buy_now_selectors = [
-            'button:has-text("Buy Now")',
-            '[class*="buy-now"]',
-        ]
+        candidates = platform_bias_selectors + generic_selectors
 
-        for selector in add_to_cart_selectors:
+        for selector in candidates:
             try:
-                button = page.locator(selector).first
-                if await button.is_visible() and await button.is_enabled():
-                    initial_url = page.url
-                    cart_badge_before = await self._get_cart_badge_count(page)
-                    await button.click()
-                    await asyncio.sleep(2)
-
-                    if await self._confirm_add_to_cart_success(
-                        page, initial_url, cart_badge_before
-                    ):
-                        logger.info("add_to_cart_success", selector=selector)
-                        self.repository.create_log(
-                            session_id=self.session_id,
-                            level="info",
-                            event_type="navigation",
-                            message="Product added to cart",
-                            details={"method": selector},
-                        )
-                        return True
+                locator = page.locator(selector).first
+                if await locator.count() == 0:
+                    continue
+                if not await locator.is_visible():
+                    continue
+                if not await locator.is_enabled():
+                    continue
+                return selector
             except Exception:
                 continue
 
-        for selector in buy_now_selectors:
+        return None
+
+    async def _click_add_to_cart_with_strategies(
+        self,
+        page: Page,
+        selector: str,
+        platform: str,
+        attempt: int,
+    ) -> bool:
+        """Click add-to-cart using a ladder of strategies."""
+        strategies = ["scroll_click", "hover_click", "wait_click", "js_click", "force_click"]
+
+        for strategy in strategies:
             try:
-                button = page.locator(selector).first
-                if await button.is_visible() and await button.is_enabled():
-                    await button.click()
-                    await asyncio.sleep(2)
-                    logger.info("buy_now_clicked", selector=selector)
-                    self.repository.create_log(
-                        session_id=self.session_id,
-                        level="info",
-                        event_type="navigation",
-                        message="Buy now clicked",
-                        details={"method": selector},
+                locator = page.locator(selector).first
+                if await locator.count() == 0:
+                    logger.info(
+                        "add_to_cart_locator_missing",
+                        selector=selector,
+                        platform=platform,
+                        strategy=strategy,
+                        attempt=attempt,
                     )
-                    return True
-            except Exception:
+                    return False
+
+                if strategy == "scroll_click":
+                    await locator.scroll_into_view_if_needed()
+                    await locator.click()
+                elif strategy == "hover_click":
+                    await locator.scroll_into_view_if_needed()
+                    await locator.hover()
+                    await locator.click()
+                elif strategy == "wait_click":
+                    await locator.wait_for(state="visible", timeout=3000)
+                    await asyncio.sleep(0.3)
+                    await locator.click()
+                elif strategy == "js_click":
+                    handle = await locator.element_handle()
+                    if handle:
+                        await page.evaluate("(el) => el.click()", handle)
+                    else:
+                        continue
+                elif strategy == "force_click":
+                    await locator.scroll_into_view_if_needed()
+                    await locator.click(force=True)
+                else:
+                    continue
+
+                logger.info(
+                    "add_to_cart_click_attempt",
+                    selector=selector,
+                    platform=platform,
+                    strategy=strategy,
+                    attempt=attempt,
+                    url_before=page.url,
+                )
+                return True
+            except Exception as e:
+                logger.warning(
+                    "add_to_cart_click_strategy_failed",
+                    selector=selector,
+                    platform=platform,
+                    strategy=strategy,
+                    attempt=attempt,
+                    error=str(e),
+                )
                 continue
 
         return False
 
-    async def _confirm_add_to_cart_success(
-        self, page: Page, initial_url: str, cart_badge_before: Optional[int]
+    async def _wait_for_platform_add_to_cart_response(
+        self, page: Page, platform: str, timeout_ms: int
     ) -> bool:
-        """Confirm add to cart success by multiple methods."""
-        if page.url != initial_url and "/cart" in page.url.lower():
+        """Best-effort network-level add-to-cart success signal."""
+        if platform not in ("shopify", "woocommerce"):
+            return False
+
+        timeout_ms = max(timeout_ms, 500)
+
+        def _matcher(response) -> bool:
+            url = response.url.lower()
+            if platform == "shopify":
+                return "/cart/add" in url
+            if platform == "woocommerce":
+                return "wc-ajax=add_to_cart" in url or "/add-to-cart/" in url
+            return False
+
+        try:
+            resp = await page.wait_for_response(_matcher, timeout=timeout_ms)
+            return resp.ok
+        except Exception:
+            return False
+
+    async def _add_to_cart(self, page: Page, platform: str) -> bool:
+        """State-machine style add-to-cart with retries."""
+        backoff_schedule = [0.8, 1.5, 2.5]
+
+        for attempt, backoff in enumerate(backoff_schedule, start=1):
+            await self._stabilize_pdp_before_atc(page)
+            await self._handle_variants(page)
+
+            selector = await self._find_best_add_to_cart_button(page, platform)
+            if not selector:
+                logger.info("add_to_cart_button_not_found", platform=platform, attempt=attempt)
+                await asyncio.sleep(backoff)
+                continue
+
+            cart_badge_before = await self._get_cart_badge_count(page)
+            initial_url = page.url
+
+            drawer_visible_before, drawer_items_before = await self._get_cart_drawer_state(page)
+            view_cta_before = await self._get_view_cart_checkout_count(page)
+            cart_like_before = await self._validate_cart_page(page)
+
+            clicked = await self._click_add_to_cart_with_strategies(
+                page=page,
+                selector=selector,
+                platform=platform,
+                attempt=attempt,
+            )
+            if not clicked:
+                await asyncio.sleep(backoff)
+                continue
+
+            network_success = await self._wait_for_platform_add_to_cart_response(
+                page, platform, int(backoff * 1000)
+            )
+            await asyncio.sleep(backoff)
+
+            success = await self._confirm_add_to_cart_success(
+                page,
+                initial_url,
+                cart_badge_before,
+                drawer_visible_before,
+                drawer_items_before,
+                view_cta_before,
+                cart_like_before,
+            )
+            success = success or network_success
+
+            logger.info(
+                "add_to_cart_attempt_result",
+                platform=platform,
+                attempt=attempt,
+                success=success,
+                backoff=backoff,
+                url_after=page.url,
+            )
+            self.repository.create_log(
+                session_id=self.session_id,
+                level="info",
+                event_type="navigation",
+                message="Add to cart attempt",
+                details={
+                    "platform": platform,
+                    "attempt": attempt,
+                    "success": success,
+                    "backoff": backoff,
+                    "url_before": initial_url,
+                    "url_after": page.url,
+                    "cart_badge_before": cart_badge_before,
+                },
+            )
+
+            if success:
+                logger.info("add_to_cart_success", platform=platform, attempt=attempt)
+                self.repository.create_log(
+                    session_id=self.session_id,
+                    level="info",
+                    event_type="navigation",
+                    message="Product added to cart",
+                    details={"platform": platform, "attempt": attempt},
+                )
+                return True
+
+        return False
+
+    async def _confirm_add_to_cart_success(
+        self,
+        page: Page,
+        initial_url: str,
+        cart_badge_before: Optional[int],
+        drawer_visible_before: bool,
+        drawer_items_before: int,
+        view_cta_before: int,
+        cart_like_before: bool,
+    ) -> bool:
+        """Confirm add to cart success by comparing before/after signals."""
+        url_changed = page.url != initial_url
+        url_cart_like = any(
+            token in page.url.lower() for token in ["/cart", "/basket", "/bag"]
+        )
+        if url_changed and url_cart_like:
             return True
 
         cart_badge_after = await self._get_cart_badge_count(page)
@@ -646,14 +1097,11 @@ class UniversalEcomNavigator:
             if cart_badge_after > cart_badge_before:
                 return True
 
-        drawer_selectors = [
-            '[class*="cart-drawer"]',
-            '[class*="cart-sidebar"]',
-            '[id*="cart-drawer"]',
-        ]
-        for selector in drawer_selectors:
-            if await page.locator(selector).first.count() > 0:
-                return True
+        drawer_visible_after, drawer_items_after = await self._get_cart_drawer_state(page)
+        if drawer_visible_after and (
+            not drawer_visible_before or drawer_items_after > max(drawer_items_before, 0)
+        ):
+            return True
 
         toast_selectors = [
             ':has-text("added to cart")',
@@ -662,13 +1110,21 @@ class UniversalEcomNavigator:
             '[class*="notification"]',
         ]
         for selector in toast_selectors:
-            if await page.locator(selector).first.count() > 0:
-                return True
+            try:
+                if await page.locator(selector).first.count() > 0:
+                    return True
+            except Exception:
+                continue
 
-        view_cart_links = await page.locator(
-            'a:has-text("View cart"), a:has-text("View Cart"), button:has-text("View cart")'
-        ).all()
-        if view_cart_links:
+        view_cart_or_checkout_after = await self._get_view_cart_checkout_count(page)
+        if view_cart_or_checkout_after > view_cta_before:
+            return True
+
+        cart_like_after = await self._validate_cart_page(page)
+        if cart_like_after and not cart_like_before:
+            return True
+
+        if await self._has_mini_cart_cart_state(page):
             return True
 
         return False
@@ -694,8 +1150,78 @@ class UniversalEcomNavigator:
                 continue
         return None
 
+    async def _get_cart_drawer_state(self, page: Page) -> tuple[bool, int]:
+        """Return whether a cart drawer is visible and its item count."""
+        drawer_selectors = [
+            '[class*="cart-drawer"]',
+            '[class*="cart-sidebar"]',
+            '[id*="cart-drawer"]',
+            '[class*="mini-cart"]',
+        ]
+        for selector in drawer_selectors:
+            drawer = page.locator(selector).first
+            try:
+                if await drawer.count() > 0 and await drawer.is_visible():
+                    items = await drawer.locator(
+                        "[class*='cart-item'], [class*='cart__item'], [data-cart-item], tr.cart_item"
+                    ).count()
+                    return True, items
+            except Exception:
+                continue
+        return False, 0
+
+    async def _get_view_cart_checkout_count(self, page: Page) -> int:
+        """Count visible view-cart / checkout CTAs."""
+        locator = page.locator(
+            'a:has-text("View cart"), a:has-text("View Cart"), button:has-text("View cart"), '
+            'a:has-text("Checkout"), button:has-text("Checkout")'
+        )
+        try:
+            return await locator.count()
+        except Exception:
+            return 0
+
     async def _navigate_to_cart(self, page: Page) -> Optional[str]:
         """Navigate to cart page."""
+        cart_state_type, container_selector, signals = await self._classify_cart_state(page)
+        if cart_state_type != "not_found":
+            logger.info(
+                "cart_state_detected",
+                cart_state_type=cart_state_type,
+                container_selector=container_selector,
+                signals=signals,
+            )
+            self.repository.create_log(
+                session_id=self.session_id,
+                level="info",
+                event_type="navigation",
+                message="Cart state detected",
+                details={
+                    "cart_state_type": cart_state_type,
+                    "container_selector": container_selector,
+                    "signals": signals,
+                },
+            )
+            self.result.cart_state_type = cart_state_type
+            return page.url
+
+        drawer_cart_selectors = [
+            '[class*="cart-drawer"] a:has-text("View cart")',
+            '[class*="cart-drawer"] a:has-text("Checkout")',
+            '[class*="cart-sidebar"] a:has-text("View cart")',
+        ]
+        for selector in drawer_cart_selectors:
+            try:
+                link = page.locator(selector).first
+                if await link.is_visible():
+                    href = await link.get_attribute("href")
+                    if href:
+                        url = normalize_internal_url(href, self.base_url)
+                        if url:
+                            return url
+            except Exception:
+                continue
+
         view_cart_selectors = [
             'a:has-text("View cart")',
             'a:has-text("View Cart")',
@@ -756,16 +1282,35 @@ class UniversalEcomNavigator:
 
         return None
 
+    async def _find_cart_from_post_atc_state(self, page: Page) -> Optional[str]:
+        """Alias for cart discovery after confirmed add-to-cart."""
+        return await self._navigate_to_cart(page)
+
     async def _validate_cart_page(self, page: Page) -> bool:
         """Validate cart page."""
         body_text = await page.inner_text("body")
-        has_line_items = bool(
+        has_keywords = bool(
             re.search(
-                r"(line item|cart item|product|subtotal|total|checkout)",
+                r"(line item|cart item|subtotal|total|checkout)",
                 body_text,
                 re.I,
             )
         )
+        line_item_locators = [
+            "tr.cart_item",
+            "[class*='cart-item']",
+            "[class*='cart__row']",
+            "[data-cart-item]",
+        ]
+        has_cart_rows = False
+        for selector in line_item_locators:
+            try:
+                if await page.locator(selector).first.count() > 0:
+                    has_cart_rows = True
+                    break
+            except Exception:
+                continue
+
         has_checkout_cta = (
             await page.locator(
                 'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
@@ -773,7 +1318,129 @@ class UniversalEcomNavigator:
             > 0
         )
 
-        return has_line_items or has_checkout_cta
+        signals_true = [has_keywords, has_cart_rows, has_checkout_cta]
+        return sum(1 for s in signals_true if s) >= 2
+    async def _detect_visible_cart_container(self, page: Page) -> tuple[Optional[str], Optional[str]]:
+        """Detect a visible cart container (page or overlay) and return (type, selector)."""
+        container_patterns = [
+            ("drawer", "[class*='cart-drawer'], [id*='cart-drawer']"),
+            ("drawer", "[class*='bag-drawer'], [class*='basket-drawer']"),
+            ("sidebar", "[class*='cart-sidebar'], [class*='basket-sidebar'], [class*='bag-sidebar']"),
+            ("mini_cart", "[class*='mini-cart'], [id*='mini-cart']"),
+            ("flyout", "[class*='flyout-cart'], [class*='flyout-bag']"),
+            ("offcanvas", "[class*='offcanvas-cart'], [class*='off-canvas-cart']"),
+            ("overlay", "[class*='cart-overlay'], [class*='basket-overlay']"),
+            ("header_cart", "[class*='header-cart'], [id*='header-cart']"),
+        ]
+
+        for state_type, selector in container_patterns:
+            locator = page.locator(selector)
+            try:
+                count = await locator.count()
+                if count == 0:
+                    continue
+                visible = await locator.first.is_visible()
+                if not visible:
+                    continue
+                return state_type, selector
+            except Exception:
+                continue
+
+        return None, None
+
+    async def _is_real_cart_container(self, container) -> tuple[bool, list[str]]:
+        """Check whether a locator is a real cart container with strong evidence."""
+        signals: list[str] = []
+        try:
+            if not await container.count() or not await container.first.is_visible():
+                return False, signals
+        except Exception:
+            return False, signals
+
+        locator = container.first
+
+        try:
+            items = await locator.locator(
+                "tr.cart_item, [class*='cart-item'], [class*='cart__row'], [data-cart-item]"
+            ).count()
+            if items > 0:
+                signals.append("line_items")
+        except Exception:
+            pass
+
+        try:
+            text = (await locator.inner_text()).lower()
+        except Exception:
+            text = ""
+
+        if any(k in text for k in ["subtotal", "total"]):
+            signals.append("totals")
+
+        try:
+            qty_controls = await locator.locator(
+                "input[name*='quantity' i], input[type='number'], button:has-text('+'), button:has-text('-')"
+            ).count()
+            if qty_controls > 0:
+                signals.append("quantity_controls")
+        except Exception:
+            pass
+
+        try:
+            remove_controls = await locator.locator(
+                "button:has-text('Remove'), a:has-text('Remove'), [class*='remove']"
+            ).count()
+            if remove_controls > 0:
+                signals.append("remove_controls")
+        except Exception:
+            pass
+
+        try:
+            checkout_cta = await locator.locator(
+                'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
+            ).count()
+            if checkout_cta > 0:
+                signals.append("checkout_cta")
+        except Exception:
+            pass
+
+        try:
+            view_cart_cta = await locator.locator(
+                'a:has-text("View cart"), a:has-text("View Cart"), button:has-text("View cart")'
+            ).count()
+            if view_cart_cta > 0:
+                signals.append("view_cart_cta")
+        except Exception:
+            pass
+
+        is_real = len(signals) > 0 and (
+            "line_items" in signals
+            or "totals" in signals
+            or "checkout_cta" in signals
+        )
+        return is_real, signals
+
+    async def _classify_cart_state(self, page: Page) -> tuple[str, Optional[str], list[str]]:
+        """Classify cart state as page / mini_cart / drawer / header_cart / unknown / not_found."""
+        if await self._validate_cart_page(page):
+            return "page", None, ["cart_page_valid"]
+
+        state_type, selector = await self._detect_visible_cart_container(page)
+        if not state_type or not selector:
+            return "not_found", None, []
+
+        container = page.locator(selector)
+        is_real, signals = await self._is_real_cart_container(container)
+        if not is_real:
+            return "not_found", None, []
+
+        if state_type == "header_cart":
+            return "header_cart", selector, signals
+        if state_type in ("drawer", "sidebar", "overlay", "offcanvas", "flyout"):
+            return "drawer", selector, signals
+        if state_type == "mini_cart":
+            return "mini_cart", selector, signals
+
+        return "unknown", selector, signals
 
     async def _navigate_to_checkout(self, browser: Browser) -> None:
         """Navigate to checkout page."""
@@ -804,9 +1471,8 @@ class UniversalEcomNavigator:
                 return
 
             await wait_for_page_ready(page, soft_timeout=10000)
-            await dismiss_popups(page)
 
-            checkout_url = await self._find_checkout_url(page)
+            checkout_url = await self._find_checkout_from_cart_state(page)
             if not checkout_url:
                 self.result.errors.append("Checkout URL not found")
                 self.result.checkout_status = "not_found"
@@ -898,6 +1564,39 @@ class UniversalEcomNavigator:
             pass
 
         return None
+
+    async def _find_checkout_from_cart_state(self, page: Page) -> Optional[str]:
+        """Find checkout URL from any cart state (page, drawer, mini-cart, header cart)."""
+        cart_state_type, selector, signals = await self._classify_cart_state(page)
+
+        if cart_state_type == "not_found":
+            return await self._find_checkout_url(page)
+
+        logger.info(
+            "checkout_from_cart_state_attempt",
+            cart_state_type=cart_state_type,
+            container_selector=selector,
+            signals=signals,
+        )
+
+        container = page if cart_state_type == "page" or not selector else page.locator(selector)
+
+        try:
+            checkout_loc = container.locator(
+                'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
+            ).first
+            if await checkout_loc.count() > 0 and await checkout_loc.is_visible():
+                href = await checkout_loc.get_attribute("href")
+                if href:
+                    return normalize_internal_url(href, self.base_url)
+                await checkout_loc.click()
+                await asyncio.sleep(2)
+                if "/checkout" in page.url.lower():
+                    return page.url
+        except Exception:
+            pass
+
+        return await self._find_checkout_url(page)
 
     async def _detect_checkout_blockers(self, page: Page) -> Optional[str]:
         """Detect checkout blockers."""

@@ -79,6 +79,8 @@ class AppConfig:
     # Public base URL of the API (e.g. https://your-app.ondigitalocean.app). When set,
     # Telegram "report ready" notification includes a link to view the PDF.
     report_base_url: Optional[str]
+    # Global browser headless flag (Playwright). When unset, defaults to False (headed).
+    browser_headless: bool
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -143,6 +145,7 @@ class AppConfig:
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
             api_secret_key=os.getenv("API_SECRET_KEY") or None,
             report_base_url=os.getenv("REPORT_BASE_URL") or None,
+            browser_headless=_bool_env("BROWSER_HEADLESS", False),
         )
 
 

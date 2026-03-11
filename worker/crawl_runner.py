@@ -1083,7 +1083,8 @@ async def crawl_pdp_async(
     Returns dict with viewport results: {"desktop": {...}, "mobile": {...}}.
     """
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        config = get_config()
+        browser = await p.chromium.launch(headless=config.browser_headless)
         results = {}
         for pt, viewport in PDP_VIEWPORTS:
             success, page_data = await crawl_pdp_viewport(
@@ -1113,7 +1114,8 @@ async def crawl_homepage_async(
     Returns dict with viewport results.
     """
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        config = get_config()
+        browser = await p.chromium.launch(headless=config.browser_headless)
 
         results = {}
         for page_type, viewport in HOMEPAGE_VIEWPORTS:

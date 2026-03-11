@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+import os
 
 from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -202,6 +203,10 @@ async def dismiss_popups(page: Page) -> list[dict]:
     should write each to DB with event_type=popup and context (session_id,
     page_type, viewport, domain).
     """
+    # Temporary debug guard: allow disabling popup handling entirely via env.
+    if os.getenv("DISABLE_POPUP_DISMISS", "").strip().lower() in ("true", "1", "yes"):
+        return []
+
     events: list[dict] = []
     dismissed_count = 0
     try:

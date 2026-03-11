@@ -51,7 +51,15 @@ services:
 
   worker:
     build: .
-    command: python -m worker.main
+    command: >
+      bash -lc "
+        Xvfb :99 -screen 0 1980x1280x24 &
+        fluxbox >/dev/null 2>&1 &
+        x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb -forever >/dev/null 2>&1 &
+        websockify --web=/opt/novnc 0.0.0.0:6081 localhost:5900 >/dev/null 2>&1 &
+        export DISPLAY=:99;
+        python -m worker.main
+      "
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_website_audit}
       REDIS_URL: redis://redis:6379/0
@@ -84,6 +92,39 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "6081:6081"
+
+  nav-debug:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_website_audit}
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_ROOT: /app/storage
+      ARTIFACTS_DIR: /app/artifacts
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEBUG_URL: ${DEBUG_URL:-https://www.chubbiesshorts.com/}
+      DEBUG_VIEWPORT: ${DEBUG_VIEWPORT:-mobile}
+    volumes:
+      - ./storage:/app/storage
+      - ./artifacts:/app/artifacts
+      - ./templates:/app/templates
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "6080:6080"
+    command: >
+      bash -lc "
+        Xvfb :99 -screen 0 1980x1280x24 &
+        fluxbox >/dev/null 2>&1 &
+        x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb -forever >/dev/null 2>&1 &
+        websockify --web=/opt/novnc 0.0.0.0:6080 localhost:5900 >/dev/null 2>&1 &
+        export DISPLAY=:99;
+        python run_nav.py --url \"$DEBUG_URL\" --viewport \"$DEBUG_VIEWPORT\" --no-headless
+      "
 
 volumes:
   postgres_data:

@@ -147,7 +147,13 @@ async def run_checkout_flow(
                 await dismiss_popups(page)
 
                 cart_navigated, cart_load_timings = await _navigate_to_cart(
-                    page, product_url, session_id, viewport, domain, repository
+                    page,
+                    product_url,
+                    session_id,
+                    viewport,
+                    domain,
+                    repository,
+                    analysis_data=html_analysis_json,
                 )
                 result["cart_navigation"]["status"] = "completed" if cart_navigated else "failed"
 
@@ -194,20 +200,22 @@ async def run_checkout_flow(
                 viewport=viewport,
                 domain=domain,
             )
-            added = await _add_to_cart_fallback(
-                page, repository, session_id, viewport, domain
-            )
+            added = await _add_to_cart_fallback(page, repository, session_id, viewport, domain)
             if added:
                 result["add_to_cart"]["status"] = "completed"
                 await asyncio.sleep(2)
                 await wait_for_page_ready(page, soft_timeout=5000)
                 await dismiss_popups(page)
                 cart_navigated, cart_load_timings = await _navigate_to_cart(
-                    page, product_url, session_id, viewport, domain, repository
+                    page,
+                    product_url,
+                    session_id,
+                    viewport,
+                    domain,
+                    repository,
+                    analysis_data=html_analysis_json,
                 )
-                result["cart_navigation"]["status"] = (
-                    "completed" if cart_navigated else "failed"
-                )
+                result["cart_navigation"]["status"] = "completed" if cart_navigated else "failed"
                 if cart_navigated:
                     await wait_for_page_ready(page, soft_timeout=10000)
                     await scroll_sequence(page)
@@ -1093,6 +1101,150 @@ async def _add_to_cart_fallback(
     return False
 
 
+async def _open_cart_ui_from_analysis(
+    page: Page,
+    analysis_data: dict,
+    repository: AuditRepository,
+    session_id: UUID,
+    viewport: str,
+    domain: str,
+) -> bool:
+    """Try to open cart UI using AI cart_ui.trigger/container."""
+    cart_ui = analysis_data.get("cart_ui") or {}
+    trigger = cart_ui.get("trigger") or {}
+    selector = trigger.get("selector")
+    selector_type = (trigger.get("selector_type") or "").strip().lower()
+    click_strategy = trigger.get("click_strategy") or "click"
+
+    if not selector or not selector_type:
+        return False
+
+    locator = (
+        page.locator(f"xpath={selector}") if selector_type == "xpath" else page.locator(selector)
+    )
+
+    try:
+        if await locator.count() == 0 or not await locator.first.is_visible():
+            return False
+    except Exception:
+        return False
+
+    try:
+        elem = locator.first
+        if click_strategy == "scroll_into_view_then_click":
+            await elem.scroll_into_view_if_needed()
+            await elem.click()
+        elif click_strategy == "js_click":
+            handle = await elem.element_handle()
+            if handle:
+                await page.evaluate("(el) => el.click()", handle)
+            else:
+                await elem.click()
+        elif click_strategy == "force_click":
+            await elem.click(force=True)
+        else:
+            await elem.click()
+
+        await asyncio.sleep(2)
+        logger.info(
+            "cart_ui_trigger_clicked",
+            selector=selector,
+            selector_type=selector_type,
+            click_strategy=click_strategy,
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="info",
+            event_type="navigation",
+            message="Cart UI trigger clicked",
+            details={
+                "selector": selector,
+                "selector_type": selector_type,
+                "click_strategy": click_strategy,
+            },
+        )
+        return True
+    except Exception as e:
+        logger.warning(
+            "cart_ui_trigger_click_failed",
+            selector=selector,
+            selector_type=selector_type,
+            click_strategy=click_strategy,
+            error=str(e),
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
+        return False
+
+
+async def _validate_cart_ui_container_from_analysis(page: Page, analysis_data: dict) -> bool:
+    """Validate cart UI container using AI cart_ui.container and strong cart signals."""
+    cart_ui = analysis_data.get("cart_ui") or {}
+    container = cart_ui.get("container") or {}
+    selector = container.get("selector")
+    selector_type = (container.get("selector_type") or "").strip().lower()
+    if not selector or not selector_type:
+        return False
+
+    locator = (
+        page.locator(f"xpath={selector}") if selector_type == "xpath" else page.locator(selector)
+    )
+    try:
+        if await locator.count() == 0 or not await locator.first.is_visible():
+            return False
+        root = locator.first
+    except Exception:
+        return False
+
+    signals: list[str] = []
+    try:
+        items = await root.locator(
+            "tr.cart_item, [class*='cart-item'], [class*='cart__row'], [data-cart-item]"
+        ).count()
+        if items > 0:
+            signals.append("line_items")
+    except Exception:
+        pass
+
+    try:
+        text = (await root.inner_text()).lower()
+    except Exception:
+        text = ""
+
+    if any(k in text for k in ["subtotal", "total"]):
+        signals.append("totals")
+
+    try:
+        checkout_cta = await root.locator(
+            'button:has-text("Checkout"), a:has-text("Checkout"), button:has-text("Proceed")'
+        ).count()
+        if checkout_cta > 0:
+            signals.append("checkout_cta")
+    except Exception:
+        pass
+
+    try:
+        view_cart_cta = await root.locator(
+            'a:has-text("View cart"), a:has-text("View Cart"), button:has-text("View cart")'
+        ).count()
+        if view_cart_cta > 0:
+            signals.append("view_cart_cta")
+    except Exception:
+        pass
+
+    logger.info(
+        "cart_ui_container_validation_signals",
+        selector=selector,
+        selector_type=selector_type,
+        signals=signals,
+    )
+    return bool(signals)
+
+
 async def _navigate_to_cart(
     page: Page,
     base_url: str,
@@ -1100,8 +1252,102 @@ async def _navigate_to_cart(
     viewport: str,
     domain: str,
     repository: AuditRepository,
+    analysis_data: Optional[dict] = None,
 ) -> bool:
-    """Navigate to cart page."""
+    """Navigate to cart page using AI hints first, then heuristics."""
+    analysis_data = analysis_data or {}
+
+    cart_ui_snapshot = analysis_data.get("cart_ui") or {}
+    trigger_cfg = cart_ui_snapshot.get("trigger") or {}
+    container_cfg = cart_ui_snapshot.get("container") or {}
+    logger.info(
+        "navigate_to_cart_start",
+        has_analysis=bool(analysis_data),
+        cart_ui_state=cart_ui_snapshot.get("state"),
+        has_cart_ui_trigger=bool(trigger_cfg.get("selector")),
+        has_cart_ui_container=bool(container_cfg.get("selector")),
+        session_id=str(session_id),
+        viewport=viewport,
+        domain=domain,
+    )
+    repository.create_log(
+        session_id=session_id,
+        level="info",
+        event_type="navigation",
+        message="Navigate to cart start",
+        details={
+            "has_analysis": bool(analysis_data),
+            "cart_ui_state": cart_ui_snapshot.get("state"),
+            "has_cart_ui_trigger": bool(trigger_cfg.get("selector")),
+            "has_cart_ui_container": bool(container_cfg.get("selector")),
+        },
+    )
+
+    # 1) Use AI cart_confirmation.view_cart if present
+    view_cart_obj = (analysis_data.get("cart_confirmation") or {}).get("view_cart") or {}
+    vc_selector = view_cart_obj.get("selector")
+    vc_type = (view_cart_obj.get("selector_type") or "").strip().lower()
+    vc_strategy = view_cart_obj.get("click_strategy") or "click"
+
+    if vc_selector and vc_type:
+        loc = (
+            page.locator(f"xpath={vc_selector}")
+            if vc_type == "xpath"
+            else page.locator(vc_selector)
+        )
+        try:
+            if await loc.count() > 0 and await loc.first.is_visible():
+                btn = loc.first
+                if vc_strategy == "scroll_into_view_then_click":
+                    await btn.scroll_into_view_if_needed()
+                    await btn.click()
+                elif vc_strategy == "js_click":
+                    handle = await btn.element_handle()
+                    if handle:
+                        await page.evaluate("(el) => el.click()", handle)
+                    else:
+                        await btn.click()
+                elif vc_strategy == "force_click":
+                    await btn.click(force=True)
+                else:
+                    await btn.click()
+
+                await asyncio.sleep(2)
+                load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+                logger.info(
+                    "cart_navigation_using_view_cart_from_analysis",
+                    selector=vc_selector,
+                    selector_type=vc_type,
+                    click_strategy=vc_strategy,
+                    session_id=str(session_id),
+                    viewport=viewport,
+                    domain=domain,
+                )
+                repository.create_log(
+                    session_id=session_id,
+                    level="info",
+                    event_type="navigation",
+                    message="Cart navigation using view_cart from analysis",
+                    details={
+                        "selector": vc_selector,
+                        "selector_type": vc_type,
+                        "click_strategy": vc_strategy,
+                    },
+                )
+                return True, load_timings
+        except Exception as e:
+            logger.warning(
+                "cart_navigation_view_cart_from_analysis_failed",
+                selector=vc_selector,
+                selector_type=vc_type,
+                click_strategy=vc_strategy,
+                error=str(e),
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+
+    # 2) Heuristic fallback (cart links on current page)
     cart_selectors = [
         'a[href*="/cart"]',
         'a[href*="/basket"]',
@@ -1152,6 +1398,132 @@ async def _navigate_to_cart(
         except Exception:
             continue
 
+    # 3) Last resort: go back to PDP and use cart_ui.trigger/container to open mini-cart / drawer
+    try:
+        try:
+            back_result = await navigate_with_retry(
+                page,
+                base_url,
+                session_id=session_id,
+                repository=repository,
+                page_type="product",
+                viewport=viewport,
+                domain=domain,
+            )
+            if back_result.success:
+                await wait_for_page_ready(page, soft_timeout=5000)
+        except Exception:
+            pass
+
+        logger.info(
+            "navigate_to_cart_cart_ui_attempt",
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
+        repository.create_log(
+            session_id=session_id,
+            level="info",
+            event_type="navigation",
+            message="Navigate to cart cart_ui attempt",
+            details={},
+        )
+        opened = await _open_cart_ui_from_analysis(
+            page, analysis_data, repository, session_id, viewport, domain
+        )
+        if opened:
+            cart_ui = analysis_data.get("cart_ui") or {}
+            container_cfg = cart_ui.get("container") or {}
+            container_selector = container_cfg.get("selector")
+            container_type = (container_cfg.get("selector_type") or "").strip().lower()
+
+            container_visible = False
+            valid_by_signals = False
+
+            if container_selector and container_type:
+                try:
+                    cont_locator = (
+                        page.locator(f"xpath={container_selector}")
+                        if container_type == "xpath"
+                        else page.locator(container_selector)
+                    )
+                    await cont_locator.first.wait_for(state="visible", timeout=5000)
+                    container_visible = True
+                except Exception:
+                    try:
+                        if await cont_locator.count() > 0 and await cont_locator.first.is_visible():
+                            container_visible = True
+                    except Exception:
+                        container_visible = False
+
+                valid_by_signals = await _validate_cart_ui_container_from_analysis(
+                    page, analysis_data
+                )
+
+            load_timings = await wait_for_page_ready(page, soft_timeout=3000)
+            logger.info(
+                "cart_state_from_cart_ui_analysis",
+                cart_ui_state=cart_ui.get("state"),
+                container_visible=container_visible,
+                valid_by_signals=valid_by_signals,
+                trigger_only_cart=not bool(container_selector and container_type),
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="navigation",
+                message="Cart state detected from cart_ui analysis",
+                details={
+                    "cart_ui": cart_ui,
+                    "baseline_state": cart_ui.get("state"),
+                    "container_visible": container_visible,
+                    "valid_by_signals": valid_by_signals,
+                    "trigger_only_cart": not bool(container_selector and container_type),
+                },
+            )
+            return True, load_timings
+        else:
+            logger.info(
+                "cart_ui_trigger_not_opened",
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="navigation",
+                message="Cart UI trigger not opened",
+                details={},
+            )
+    except Exception as e:
+        logger.warning(
+            "cart_navigation_cart_ui_analysis_failed",
+            error=str(e),
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
+
+    logger.info(
+        "navigate_to_cart_failed",
+        reason="no_cart_detected_any_strategy",
+        session_id=str(session_id),
+        viewport=viewport,
+        domain=domain,
+    )
+    repository.create_log(
+        session_id=session_id,
+        level="info",
+        event_type="navigation",
+        message="Cart navigation failed, cart page not found",
+        details={
+            "reason": "no_cart_detected_any_strategy",
+        },
+    )
     return False, {}
 
 

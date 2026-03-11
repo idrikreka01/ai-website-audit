@@ -13,6 +13,7 @@ from uuid import UUID
 
 from playwright.async_api import async_playwright
 
+from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
 from worker.constants import PDP_VIEWPORTS
 from worker.crawl import (
@@ -64,7 +65,8 @@ async def run_pdp_discovery_and_validation(
         return None
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True)
+        config = get_config()
+        browser = await pw.chromium.launch(headless=config.browser_headless)
         context = await create_browser_context(browser, "desktop")
         try:
             for pdp_url in candidate_urls:
