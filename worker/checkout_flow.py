@@ -32,6 +32,7 @@ from worker.crawl import (
     scroll_sequence,
     wait_for_page_ready,
 )
+from worker.crawl.readiness import handle_popups_form
 from worker.crawl.navigation_retry import navigate_with_retry
 from worker.html_analysis import analyze_product_html
 from worker.repository import AuditRepository
@@ -83,9 +84,9 @@ async def run_checkout_flow(
             return result
 
         await wait_for_page_ready(page, soft_timeout=10000)
-        await dismiss_popups(page)
+        await handle_popups_form(page, max_passes=2)
         await scroll_sequence(page)
-        await dismiss_popups(page)
+        await handle_popups_form(page, max_passes=2)
 
         variant_groups = html_analysis_json.get("variant_groups", [])
         has_variants = html_analysis_json.get("has_variants", False)
@@ -104,9 +105,9 @@ async def run_checkout_flow(
 
             if selected:
                 await wait_for_page_ready(page, soft_timeout=5000)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
                 await scroll_sequence(page)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
 
         add_to_cart_config = html_analysis_json.get("add_to_cart", {})
         has_add_to_cart = add_to_cart_config.get("found", False) or bool(
@@ -135,16 +136,16 @@ async def run_checkout_flow(
                 )
 
                 await asyncio.sleep(2)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
                 await scroll_sequence(page)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
 
             result["add_to_cart"]["status"] = "completed" if added else "failed"
 
             if added:
                 await asyncio.sleep(2)
                 await wait_for_page_ready(page, soft_timeout=5000)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
 
                 cart_navigated, cart_load_timings = await _navigate_to_cart(
                     page,
@@ -160,7 +161,7 @@ async def run_checkout_flow(
                 if cart_navigated:
                     await wait_for_page_ready(page, soft_timeout=10000)
                     await scroll_sequence(page)
-                    await dismiss_popups(page)
+                    await handle_popups_form(page, max_passes=2)
 
                     cart_analysis = await _capture_page_payloads(
                         page, "cart", session_id, viewport, domain, repository, cart_load_timings
@@ -182,7 +183,7 @@ async def run_checkout_flow(
                     if checkout_navigated:
                         await wait_for_page_ready(page, soft_timeout=10000)
                         await scroll_sequence(page)
-                        await dismiss_popups(page)
+                        await handle_popups_form(page, max_passes=2)
 
                         await _capture_page_payloads(
                             page,
@@ -205,7 +206,7 @@ async def run_checkout_flow(
                 result["add_to_cart"]["status"] = "completed"
                 await asyncio.sleep(2)
                 await wait_for_page_ready(page, soft_timeout=5000)
-                await dismiss_popups(page)
+                await handle_popups_form(page, max_passes=2)
                 cart_navigated, cart_load_timings = await _navigate_to_cart(
                     page,
                     product_url,
@@ -219,7 +220,7 @@ async def run_checkout_flow(
                 if cart_navigated:
                     await wait_for_page_ready(page, soft_timeout=10000)
                     await scroll_sequence(page)
-                    await dismiss_popups(page)
+                    await handle_popups_form(page, max_passes=2)
                     cart_analysis = await _capture_page_payloads(
                         page,
                         "cart",
@@ -244,7 +245,7 @@ async def run_checkout_flow(
                     if checkout_navigated:
                         await wait_for_page_ready(page, soft_timeout=10000)
                         await scroll_sequence(page)
-                        await dismiss_popups(page)
+                        await handle_popups_form(page, max_passes=2)
                         await _capture_page_payloads(
                             page,
                             "checkout",

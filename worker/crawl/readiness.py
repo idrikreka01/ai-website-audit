@@ -274,6 +274,58 @@ async def dismiss_popups(page: Page) -> list[dict]:
     return events
 
 
+async def handle_popups_form(
+    page: Page,
+    *,
+    max_passes: int = 2,
+) -> dict:
+    """
+    Structured popup handling wrapper.
+
+    Runs dismiss_popups up to max_passes times and returns a structured result
+    object without any overlay-hide mutations. This is safe for flows where
+    overlays are part of the user experience (for example, mini-cart drawers
+    after add-to-cart) and must not be removed.
+    """
+    all_events: list[dict] = []
+    errors: list[str] = []
+
+    for _ in range(max_passes):
+        try:
+            events = await dismiss_popups(page)
+            if not events:
+                break
+            all_events.extend(events)
+        except Exception as e:
+            errors.append(f"dismiss_popups_error:{type(e).__name__}:{e}")
+            break
+
+    actions: list[dict] = []
+    for ev in all_events:
+        actions.append(
+            {
+                "type": ev.get("action", "dismiss_click"),
+                "method": "click",
+                "selector": ev.get("selector"),
+                "text": None,
+                "language_hint": None,
+                "context": "popup",
+                "result": ev.get("result"),
+                "attempt": ev.get("attempt"),
+                "timestamp": ev.get("timestamp"),
+                "current_url": ev.get("current_url"),
+            }
+        )
+
+    return {
+        "found": bool(actions),
+        "actions": actions,
+        "remaining_blockers": [],
+        "errors": errors,
+        "passes_run": max_passes,
+    }
+
+
 async def run_overlay_hide_fallback(page: Page) -> list[dict]:
     """
     Last-resort overlay hide fallback (TECH_SPEC_V1.1.md §5 v1.23).
