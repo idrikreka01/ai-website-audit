@@ -11,7 +11,7 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 0) Crawl policy version
 
-- **crawl_policy_version**: `v1.24` (Deterministic settle delays after popup/overlay; extraction retry on transient Playwright errors; see §5).
+- **crawl_policy_version**: `v1.26` (Session-level Excel rubric artifact export; deterministic settle delays after popup/overlay; extraction retry on transient Playwright errors; additional deterministic wait before first popup pass to catch late-appearing overlays; see §5 and §4).
 - **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
 - **v1.2**: PDP validation requires price + title+image.
 - **v1.3**: Navigation retry policy: attempts, backoff, timeouts, retryable classes, and bot-block detection with single mitigation retry (§5).
@@ -34,6 +34,8 @@ This document is the authoritative, merged specification. It includes all conten
 - **v1.22**: Popup logging records only dismiss events (success/failure); detected-ignored events are not logged.
 - **v1.23**: Last-resort overlay hide fallback after safe-dismiss passes: blocked-page detection (large fixed/absolute overlay, scroll-lock or click-blocked); hide (no remove) in main doc + iframes, one pass; exclude structural nodes; single popup event `action=overlay_hide_fallback`.
 - **v1.24**: Deterministic settle delays: after each popup dismiss click (configurable, e.g. 500 ms); after overlay hide fallback (configurable, e.g. 500 ms). Extraction retry policy: retry once (max 2 attempts total) on transient Playwright errors (execution context destroyed, target closed, navigation interrupted); retry flow: short wait_for_page_ready → optional popup pass → overlay fallback → retry extraction; log retries with `event_type=retry`, reason, attempt, page_type, viewport.
+- **v1.25**: Add session-level Excel rubric artifact (`excel_rubric_xlsx`) stored at `{domain}__{session_id}/output.xlsx`. Workbook contains `Questions` (static rubric) and `Output` (per-question grading rows) tabs and is excluded from HTML retention cleanup.
+- **v1.26**: Add a small deterministic wait before the first popup dismissal pass after page ready (to allow late-appearing overlays), keeping total wait bounded and deterministic.
 
 ---
 
@@ -151,11 +153,13 @@ This document is the authoritative, merged specification. It includes all conten
   - Visible text (cleaned DOM innerText)
   - Structured features JSON
   - HTML (html.gz)
+  - Session-level Excel rubric workbook (`excel_rubric_xlsx`) for completed sessions
 
 - **Retention**
   - Always-stored artifacts: standard retention (long-lived)
   - HTML artifacts: short retention (default 14 days, configurable 7–30)
-  - Session log artifacts (session_logs_jsonl): long-term retention; no cleanup (never deleted by retention job).
+  - Session log artifacts (`session_logs_jsonl`): long-term retention; no cleanup (never deleted by retention job).
+  - Excel rubric artifacts (`excel_rubric_xlsx`): long-term retention; no cleanup (never deleted by retention job).
 
 - **Retention cleanup**
   - Expired html_gz artifacts (retention_until < now) are deleted from storage and marked with deleted_at in the DB.
@@ -169,9 +173,11 @@ This document is the authoritative, merged specification. It includes all conten
   - `{domain}__{session_id}/{path}`
   - `domain` is normalized: lowercase, strip leading `www.`.
   - Page-level artifacts: `{domain}__{session_id}/{page_type}/{viewport}/{artifact_type}.{ext}`
-  - Session-level artifact: `{domain}__{session_id}/session_logs.jsonl`
+  - Session-level log artifact: `{domain}__{session_id}/session_logs.jsonl`
+  - Session-level Excel rubric artifact: `{domain}__{session_id}/output.xlsx`
   - Example: `example.com__session-uuid-123/homepage/desktop/screenshot.png`
   - Example: `example.com__session-uuid-123/session_logs.jsonl`
+  - Example: `example.com__session-uuid-123/output.xlsx`
 
 - **Session log export**
   - All session-scoped logs must be written to the `crawl_logs` table during the crawl.

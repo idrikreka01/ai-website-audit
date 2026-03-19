@@ -70,6 +70,18 @@ def build_session_log_artifact_path(domain: str, session_id: UUID) -> Path:
     return artifacts_root / root_name / "session_logs.jsonl"
 
 
+def build_excel_rubric_artifact_path(domain: str, session_id: UUID) -> Path:
+    """
+    Build the path for the session-level Excel rubric artifact (no page_type/viewport).
+
+    Convention: {domain}__{session_id}/output.xlsx
+    """
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    root_name = _artifact_root_name(domain, session_id)
+    return artifacts_root / root_name / "output.xlsx"
+
+
 def _artifact_root_name(domain: str, session_id: UUID) -> str:
     """Domain-first session root: {domain}__{session_id}."""
     normalized_domain = _normalize_domain(domain)
@@ -170,6 +182,19 @@ def write_html_gz(path: Path, html: str) -> tuple[int, str | None]:
     path.write_bytes(compressed)
     size = len(compressed)
     checksum = hashlib.md5(compressed).hexdigest()
+    return size, checksum
+
+
+def write_binary(path: Path, content: bytes) -> tuple[int, str | None]:
+    """
+    Write arbitrary binary content to disk.
+
+    Returns (size_bytes, checksum). May raise OSError/IOError on write failure.
+    """
+    ensure_artifact_dir(path)
+    path.write_bytes(content)
+    size = len(content)
+    checksum = hashlib.md5(content).hexdigest()
     return size, checksum
 
 

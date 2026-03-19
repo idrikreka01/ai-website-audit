@@ -28,6 +28,7 @@ from worker.locking import (
 )
 from worker.orchestrator import run_audit_session
 from worker.repository import AuditRepository
+from worker.excel_rubric import save_excel_rubric_workbook
 
 logger = get_logger(__name__)
 
@@ -119,6 +120,15 @@ def process_audit_job(session_id: str, url: str) -> None:
 
         try:
             run_audit_session(url, session_uuid, repository)
+            try:
+                save_excel_rubric_workbook(repository, session_uuid, domain)
+            except Exception as e:
+                logger.error(
+                    "excel_rubric_artifact_export_failed",
+                    session_id=session_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         except Exception as e:
             logger.error("audit_job_error", error=str(e), error_type=type(e).__name__)
             repository.update_session_status(

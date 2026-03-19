@@ -11,7 +11,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from shared.config import get_config
-from worker.storage import build_artifact_path, build_session_log_artifact_path
+from worker.storage import (
+    build_artifact_path,
+    build_excel_rubric_artifact_path,
+    build_session_log_artifact_path,
+)
 
 DOMAIN = "example.com"
 
@@ -344,3 +348,34 @@ def test_session_log_path_under_same_root_as_page_artifacts():
     session_log_root = session_log_path.parent
     assert page_root == session_log_root
     assert session_log_path.name == "session_logs.jsonl"
+
+
+def test_build_excel_rubric_artifact_path_structure():
+    """Session-level Excel rubric path is {domain}__{session_id}/output.xlsx."""
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    session_id = uuid4()
+    path = build_excel_rubric_artifact_path(DOMAIN, session_id)
+
+    assert path.name == "output.xlsx"
+    rel = path.relative_to(artifacts_root)
+    assert rel.parts[0] == f"{DOMAIN}__{session_id}"
+    assert rel.parts[1] == "output.xlsx"
+    assert len(rel.parts) == 2
+
+
+def test_build_excel_rubric_artifact_path_domain_normalization():
+    """Excel rubric path uses normalized domain (lowercase, no www)."""
+    session_id = uuid4()
+    path = build_excel_rubric_artifact_path("WWW.Example.COM", session_id)
+
+    assert f"example.com__{session_id}" in str(path)
+    assert path.name == "output.xlsx"
+
+
+def test_build_excel_rubric_artifact_path_deterministic():
+    """Same domain and session_id produce the same Excel rubric path."""
+    session_id = uuid4()
+    p1 = build_excel_rubric_artifact_path(DOMAIN, session_id)
+    p2 = build_excel_rubric_artifact_path(DOMAIN, session_id)
+    assert p1 == p2

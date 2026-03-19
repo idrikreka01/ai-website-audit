@@ -25,6 +25,7 @@ from worker.crawl.constants import (
     OVERLAY_HIDE_SETTLE_MS,
     POPUP_CLICK_TIMEOUT_MS,
     POPUP_CONTAINER_SELECTORS,
+    POPUP_PRE_PASS_WAIT_MS,
     POPUP_SETTLE_AFTER_DISMISS_MS,
     POPUP_VISIBILITY_TIMEOUT_MS,
     SCROLL_BOTTOM_WAIT_MS,
@@ -210,6 +211,8 @@ async def dismiss_popups(page: Page) -> list[dict]:
     events: list[dict] = []
     dismissed_count = 0
     try:
+        # Small deterministic wait before first popup pass to allow late overlays (v1.26).
+        await asyncio.sleep(POPUP_PRE_PASS_WAIT_MS / 1000)
         popup_selectors = get_popup_selectors_in_order(overlay_first=True)
         for attempt_one_based, selector in enumerate(popup_selectors, start=1):
             if dismissed_count >= MAX_DISMISSALS_PER_PASS:

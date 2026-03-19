@@ -355,10 +355,13 @@ POPUP_CONTAINER_SELECTORS = (
 MAX_DISMISSALS_PER_PASS = 5
 POPUP_VISIBILITY_TIMEOUT_MS = 1000
 POPUP_CLICK_TIMEOUT_MS = 2000
-# Settle delay after each popup dismiss click (TECH_SPEC §5 v1.24)
+# Settle delay after each popup dismiss click 
 POPUP_SETTLE_AFTER_DISMISS_MS = 750
-# Settle delay after overlay hide fallback, before extraction (TECH_SPEC §5 v1.24)
+# Settle delay after overlay hide fallback, before extraction 
 OVERLAY_HIDE_SETTLE_MS = 750
+
+# Extra deterministic wait before first popup pass to catch late overlays 
+POPUP_PRE_PASS_WAIT_MS = 500
 
 # Safe dismiss keywords (button/link text); minimal set for deterministic matching.
 # Only elements whose normalized text matches one of these are considered safe to click.

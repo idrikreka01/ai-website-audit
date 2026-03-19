@@ -94,6 +94,7 @@ class ArtifactResponse(BaseModel):
         "session_logs_jsonl",
         "html_analysis_json",
         "report_pdf",
+        "excel_rubric_xlsx",
     ]
     storage_uri: str
     size_bytes: int
@@ -152,7 +153,6 @@ class CreateAuditQuestionRequest(BaseModel):
     page_type: QUESTION_PAGE_TYPES = Field(
         ..., description="Page type this question applies to"
     )
-
 
 class UpdateAuditQuestionRequest(BaseModel):
     """Request schema for PUT /audits/questions/{question_id}."""

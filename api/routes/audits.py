@@ -695,3 +695,108 @@ def get_audit_report_pdf(
         media_type="application/pdf",
         filename=f"audit_report_{session_id}.pdf",
     )
+
+
+@router.get(
+    "/{session_id}/report/excel",
+    response_class=FileResponse,
+    summary="Get Excel rubric workbook for audit session",
+)
+def get_audit_report_excel(
+    session_id: UUID,
+    regenerate: bool = False,
+    service: Annotated[AuditService, Depends(get_audit_service)] = ...,
+) -> FileResponse:
+    """
+    Get Excel rubric workbook for audit session.
+
+    Returns the XLSX file if it exists. If regenerate=true, regenerates the
+    workbook from current data first, then returns it.
+    """
+    bind_request_context(session_id=str(session_id))
+
+    session = service.get_audit_session(session_id)
+    if session is None:
+        logger.warning("audit_session_not_found_for_excel", session_id=str(session_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Audit session {session_id} not found",
+        )
+
+    if regenerate:
+        from urllib.parse import urlparse
+        from worker.excel_rubric import save_excel_rubric_workbook
+        from worker.repository import AuditRepository as WorkerAuditRepository
+
+        domain = urlparse(session.url).netloc or "unknown"
+        repo = WorkerAuditRepository(service.repository.session)
+        ok = save_excel_rubric_workbook(repo, session_id, domain)
+        if not ok:
+            logger.warning(
+                "excel_rubric_regenerate_failed",
+                session_id=str(session_id),
+                domain=domain,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Excel rubric regeneration failed.",
+            )
+
+    artifacts = service.get_audit_artifacts(session_id)
+    if artifacts is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found",
+        )
+
+    excel_artifact = next(
+        (a for a in artifacts if a.type == "excel_rubric_xlsx"),
+        None,
+    )
+    if excel_artifact is None:
+        logger.warning(
+            "excel_rubric_not_found",
+            session_id=str(session_id),
+            message="Excel rubric workbook not yet generated",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Excel rubric workbook not found for session {session_id}. "
+                "It may still be generating."
+            ),
+        )
+
+    from pathlib import Path
+    from shared.config import get_config
+
+    config = get_config()
+    artifacts_root = Path(config.artifacts_dir)
+    excel_path = artifacts_root / excel_artifact.storage_uri
+
+    if not excel_path.exists():
+        logger.error(
+            "excel_file_not_found_on_disk",
+            session_id=str(session_id),
+            storage_uri=excel_artifact.storage_uri,
+            expected_path=str(excel_path),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Excel file not found on disk for session {session_id}",
+        )
+
+    logger.info(
+        "excel_rubric_downloaded",
+        session_id=str(session_id),
+        storage_uri=excel_artifact.storage_uri,
+        size_bytes=excel_artifact.size_bytes,
+    )
+
+    return FileResponse(
+        path=str(excel_path),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        filename=f"audit_rubric_{session_id}.xlsx",
+    )
