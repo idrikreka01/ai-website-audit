@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -50,6 +51,43 @@ def send_telegram_message(
         return False
     except Exception as e:
         logger.warning(f"Failed to send Telegram message: {e}")
+        return False
+
+
+def send_telegram_document(
+    bot_token: str,
+    chat_id: str,
+    document_path: str,
+    filename: Optional[str] = None,
+    caption: Optional[str] = None,
+) -> bool:
+    if not bot_token or not chat_id:
+        return False
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+
+    doc_file = Path(document_path)
+    if not doc_file.exists():
+        return False
+
+    used_filename = filename or doc_file.name
+    data: dict[str, str] = {"chat_id": str(chat_id)}
+    if caption:
+        data["caption"] = caption
+
+    try:
+        with doc_file.open("rb") as f:
+            files = {"document": (used_filename, f)}
+            response = requests.post(url, data=data, files=files, timeout=30)
+            response.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as e:
+        logger.warning(f"Failed to send Telegram document: {e}")
+        if hasattr(e.response, "text"):
+            logger.warning(f"Telegram API response: {e.response.text}")
+        return False
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram document: {e}")
         return False
 
 

@@ -130,6 +130,42 @@ class AuditRepository:
         results = self.session.execute(stmt).all()
         return [dict(row._mapping) for row in results]
 
+    def list_sessions_by_domain(self, domain: str, limit: int) -> list[dict]:
+        """
+        List audit sessions for a domain (including optional www. prefix).
+
+        Matches both http:// and https:// URLs where the host is either
+        `domain` or `www.domain`.
+        """
+        domain_normalized = domain.lower().strip()
+        if domain_normalized.startswith("www."):
+            domain_normalized = domain_normalized[4:]
+
+        hosts = [domain_normalized, f"www.{domain_normalized}"]
+
+        stmt = (
+            select(
+                self.sessions_table.c.id,
+                self.sessions_table.c.status,
+                self.sessions_table.c.url,
+                self.sessions_table.c.created_at,
+                self.sessions_table.c.error_summary,
+            )
+            .where(
+                or_(
+                    self.sessions_table.c.url.like(f"http://{hosts[0]}%"),
+                    self.sessions_table.c.url.like(f"https://{hosts[0]}%"),
+                    self.sessions_table.c.url.like(f"http://{hosts[1]}%"),
+                    self.sessions_table.c.url.like(f"https://{hosts[1]}%"),
+                )
+            )
+            .order_by(self.sessions_table.c.created_at.desc())
+            .limit(limit)
+        )
+
+        results = self.session.execute(stmt).all()
+        return [dict(row._mapping) for row in results]
+
     def update_session_status(
         self,
         session_id: UUID,

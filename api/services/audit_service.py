@@ -259,6 +259,19 @@ class AuditService:
 
         return artifacts
 
+    def list_audit_sessions_by_domain(
+        self,
+        *,
+        domain: str,
+        limit: int,
+    ) -> list[dict]:
+        """
+        List audit sessions for a domain.
+
+        Returns minimal fields needed for Telegram formatting.
+        """
+        return self.repository.list_sessions_by_domain(domain=domain, limit=limit)
+
     def create_question(
         self,
         request: CreateAuditQuestionRequest,
