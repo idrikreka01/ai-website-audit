@@ -7,8 +7,12 @@ ordering/cap, dedupe, nav/footer exclusion, and existing pattern-based selection
 
 from __future__ import annotations
 
+import os
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
+from worker.crawl.pdp_candidates import _http_validate_product_html
 from worker.crawl import (
     extract_pdp_candidate_links,
     filter_pdp_candidate_urls,
@@ -564,3 +568,57 @@ async def test_extract_pdp_candidate_links_nav_footer_excluded():
     assert main_url in result
     assert nav_url not in result
     assert footer_url not in result
+
+
+@pytest.mark.asyncio
+async def test_extract_pdp_candidate_links_http_new_mode_uses_http_discovery():
+    page = AsyncMock()
+    base_url = "https://example.com/"
+    discovered = [
+        "https://example.com/products/a?ref=1",
+        "https://example.com/cart/x",
+        "https://other.com/products/b",
+    ]
+    with (
+        patch.dict(os.environ, {"PDP_DISCOVERY_MODE": "new"}),
+        patch(
+            "worker.crawl.pdp_candidates._discover_products_via_http_crawl",
+            return_value=discovered,
+        ),
+    ):
+        result = await extract_pdp_candidate_links(page, base_url, max_candidates=10)
+
+    assert result == ["https://example.com/products/a"]
+
+
+def test_http_validate_product_html_accepts_product_like_page():
+    html = """
+    <html>
+      <head>
+        <meta property="og:type" content="product">
+      </head>
+      <body>
+        <form action="/cart/add">
+          <button>Add to cart</button>
+        </form>
+      </body>
+    </html>
+    """
+    ok, reason = _http_validate_product_html(html)
+    assert ok is True
+    assert "og:type product" in reason or "cart add form" in reason
+
+
+def test_http_validate_product_html_rejects_non_product_page():
+    html = """
+    <html>
+      <head><title>About us</title></head>
+      <body>
+        <h1>About</h1>
+        <a href="/contact">Contact</a>
+      </body>
+    </html>
+    """
+    ok, reason = _http_validate_product_html(html)
+    assert ok is False
+    assert reason

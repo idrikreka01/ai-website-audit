@@ -27,12 +27,15 @@ def evaluate_pdp_validation_signals(
     """
     Evaluate PDP validation rule (pure function for tests).
 
-    Valid PDP requires: price + title+image. Strong signal is tracked only.
+    A PDP is valid when:
+    - base met: price + title+image, OR
+    - fallback met: price + (add-to-cart OR product schema)
     Returns (is_valid: bool, base_met: bool, strong_signal_met: bool).
     """
     base_met = has_price and has_title_and_image
     strong_signal_met = has_add_to_cart or has_product_schema
-    is_valid = base_met
+    fallback_met = has_price and strong_signal_met
+    is_valid = base_met or fallback_met
     return (is_valid, base_met, strong_signal_met)
 
 
@@ -40,7 +43,7 @@ def is_valid_pdp_page(signals: dict) -> bool:
     """
     Return True if signals dict indicates a valid PDP.
 
-    Rule: price + title+image.
+    Rule: (price + title+image) OR (price + (add-to-cart OR product schema)).
     Pure function for tests. signals keys: has_price, has_add_to_cart,
     has_product_schema, has_title_and_image.
     """
@@ -86,6 +89,7 @@ async def extract_pdp_validation_signals(page: Page) -> dict:
             'button:has-text("Add to Bag")',
             'button:has-text("Buy Now")',
             '[name="add-to-cart"]',
+            '[name="add"]',
             '[class*="add-to-cart"]',
             '[class*="addToCart"]',
         ]

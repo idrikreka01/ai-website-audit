@@ -30,6 +30,10 @@ def create_app() -> FastAPI:
         level=log_level,
         log_file=config.log_file,
         log_stdout=config.log_stdout,
+        log_format=config.log_format,
+        telegram_bot_token=config.telegram_bot_token,
+        telegram_chat_id=config.telegram_chat_id,
+        telegram_log_every_event=config.telegram_log_every_event,
     )
 
     app = FastAPI(

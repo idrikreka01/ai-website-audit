@@ -268,7 +268,23 @@ class UniversalEcomNavigator:
             candidates = await extract_pdp_candidate_links(page, self.base_url, max_candidates=10)
             for candidate_url in candidates:
                 if await self._validate_candidate_url(page, candidate_url):
-                    return candidate_url
+                    nav_result = await navigate_with_retry(
+                        page,
+                        candidate_url,
+                        session_id=self.session_id,
+                        repository=self.repository,
+                        page_type="product",
+                        viewport=self.viewport,
+                        domain=self.domain,
+                    )
+                    if not nav_result.success:
+                        continue
+                    await apply_preconsent_in_frames(page, DEFAULT_VENDORS)
+                    await wait_for_page_ready(page, soft_timeout=10000)
+                    await asyncio.sleep(CONSENT_POSITIONING_DELAY_MS / 1000)
+                    await dismiss_popups(page)
+                    if await self._validate_product_page(page):
+                        return candidate_url
         except Exception as e:
             logger.warning("homepage_scan_failed", error=str(e))
         return None

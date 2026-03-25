@@ -30,6 +30,7 @@ class AppConfig:
 
     environment: Environment
     log_level: str
+    log_format: str
 
     # Optional file path for structured JSON logs; when set, logs are written
     # to file (and stdout if log_stdout).
@@ -67,10 +68,12 @@ class AppConfig:
     # OpenAI API configuration (for HTML analysis)
     openai_api_key: Optional[str]
     html_analysis_mode: str
+    checkout_processing_mode: str
 
     # Telegram notification configuration
     telegram_bot_token: Optional[str]
     telegram_chat_id: Optional[str]
+    telegram_log_every_event: bool
 
     # API authentication (optional). When set, all /audits requests require
     # Authorization: Bearer <key> or X-API-Key: <key>. Leave unset for local dev.
@@ -121,6 +124,7 @@ class AppConfig:
         return cls(
             environment=environment,  # type: ignore[arg-type]
             log_level=os.getenv("LOG_LEVEL", "INFO"),
+            log_format=os.getenv("LOG_FORMAT", "console").lower(),
             log_file=os.getenv("LOG_FILE") or None,
             log_stdout=log_stdout,
             database_url=os.getenv("DATABASE_URL"),
@@ -141,8 +145,10 @@ class AppConfig:
             audit_job_timeout_seconds=int(os.getenv("AUDIT_JOB_TIMEOUT_SECONDS", "1200")),
             openai_api_key=os.getenv("OPENAI_API_KEY") or None,
             html_analysis_mode=os.getenv("HTML_ANALYSIS_MODE", "automatic").lower(),
+            checkout_processing_mode=os.getenv("CHECKOUT_PROCESSING_MODE", "simple").lower(),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
+            telegram_log_every_event=_bool_env("TELEGRAM_LOG_EVERY_EVENT", False),
             api_secret_key=os.getenv("API_SECRET_KEY") or None,
             report_base_url=os.getenv("REPORT_BASE_URL") or None,
             browser_headless=_bool_env("BROWSER_HEADLESS", False),

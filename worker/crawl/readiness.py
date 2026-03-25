@@ -1,3 +1,5 @@
+# ABOUTME: Page readiness orchestrates deterministic crawling steps.
+# ABOUTME: Popup dismissal and overlay-hide fallback live here.
 """
 Page readiness: wait for ready, scroll sequence, dismiss popups.
 
@@ -11,10 +13,15 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import os
+import re
+
+from bs4 import BeautifulSoup, Tag
+from lxml import html as lxml_html
 
 from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
+from shared.config import get_config
 from shared.logging import get_logger
 from worker.crawl.blocked_page import apply_overlay_hide_in_frames, detect_blocked_page
 from worker.crawl.constants import (
@@ -154,6 +161,251 @@ async def _element_dismiss_text(element: Locator) -> str:
     return " ".join(parts).strip()
 
 
+def _selector_allows_empty_text_dismiss(selector: str) -> bool:
+    """Allow dismiss click when element has no readable text/aria-label."""
+    s = (selector or "").lower()
+    return "close" in s or "dismiss" in s
+
+
+_DISCOVERY_POPUP_CONTAINER_WORDS = (
+    "popup",
+    "modal",
+    "dialog",
+    "overlay",
+    "drawer",
+    "newsletter",
+    "cookie",
+    "consent",
+    "klaviyo",
+    "privy",
+)
+
+_DISCOVERY_CLOSE_WORDS = (
+    "close",
+    "dismiss",
+    "no thanks",
+    "not now",
+    "got it",
+    "agree",
+    "accept",
+    "continue",
+)
+
+_DISCOVERY_SYMBOL_TEXT = {"x", "×", "✕", "✖", "✗", "✘"}
+
+
+def _discovery_normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip().lower()
+
+
+def _discovery_get_attr(tag: Tag, name: str) -> str:
+    value = tag.attrs.get(name)
+    if isinstance(value, list):
+        return " ".join(str(v) for v in value)
+    return str(value or "")
+
+
+def _discovery_tag_text(tag: Tag) -> str:
+    return _discovery_normalize_space(" ".join(tag.stripped_strings))
+
+
+def _discovery_safe_literal(value: str) -> str:
+    value = str(value)
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ", \"'\", ".join(f"'{part}'" for part in parts) + ")"
+
+
+def _discovery_build_xpath(tag: Tag) -> str:
+    parts: list[str] = [f"//{tag.name}"]
+
+    tag_id = _discovery_get_attr(tag, "id").strip()
+    if tag_id:
+        return "".join(parts + [f"[@id={_discovery_safe_literal(tag_id)}]"])
+
+    aria_label = _discovery_get_attr(tag, "aria-label").strip()
+    if aria_label:
+        return "".join(parts + [f"[@aria-label={_discovery_safe_literal(aria_label)}]"])
+
+    name = _discovery_get_attr(tag, "name").strip()
+    if name:
+        parts.append(f"[@name={_discovery_safe_literal(name)}]")
+
+    classes = [cls for cls in _discovery_get_attr(tag, "class").split() if cls]
+    if classes:
+        class_checks = [
+            f"contains(concat(' ', normalize-space(@class), ' '), ' {cls} ')"
+            for cls in classes[:2]
+        ]
+        parts.append("[" + " and ".join(class_checks) + "]")
+
+    text_value = _discovery_tag_text(tag)
+    if text_value:
+        parts.append(
+            "[contains(translate(normalize-space(.), "
+            "'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), "
+            f"{_discovery_safe_literal(text_value[:30])})]"
+        )
+
+    return "".join(parts)
+
+
+def _discovery_find_popup_ancestor(tag: Tag) -> Tag | None:
+    for ancestor in tag.parents:
+        if not isinstance(ancestor, Tag):
+            continue
+        blob = _discovery_normalize_space(
+            " ".join(
+                [
+                    ancestor.name,
+                    _discovery_get_attr(ancestor, "id"),
+                    _discovery_get_attr(ancestor, "class"),
+                    _discovery_get_attr(ancestor, "role"),
+                    _discovery_get_attr(ancestor, "aria-label"),
+                    _discovery_get_attr(ancestor, "data-testid"),
+                ]
+            )
+        )
+        if any(word in blob for word in _DISCOVERY_POPUP_CONTAINER_WORDS):
+            return ancestor
+    return None
+
+
+def _discovery_score_close_candidate(tag: Tag) -> tuple[int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+
+    text_value = _discovery_tag_text(tag)
+    attrs_blob = _discovery_normalize_space(
+        " ".join(
+            [
+                text_value,
+                _discovery_get_attr(tag, "id"),
+                _discovery_get_attr(tag, "name"),
+                _discovery_get_attr(tag, "class"),
+                _discovery_get_attr(tag, "type"),
+                _discovery_get_attr(tag, "value"),
+                _discovery_get_attr(tag, "aria-label"),
+                _discovery_get_attr(tag, "title"),
+                _discovery_get_attr(tag, "role"),
+                _discovery_get_attr(tag, "data-testid"),
+            ]
+        )
+    )
+
+    if tag.name in {"button", "a"}:
+        score += 15
+        reasons.append("clickable element")
+    elif tag.name in {"div", "span"} and (
+        _discovery_get_attr(tag, "role").strip() == "button" or _discovery_get_attr(tag, "onclick").strip()
+    ):
+        score += 10
+        reasons.append("button-like container")
+    else:
+        return 0, []
+
+    if any(word in text_value for word in _DISCOVERY_CLOSE_WORDS):
+        score += 35
+        reasons.append("close-like text")
+
+    if text_value in _DISCOVERY_SYMBOL_TEXT:
+        score += 35
+        reasons.append("symbol close text")
+
+    if any(word in attrs_blob for word in _DISCOVERY_CLOSE_WORDS):
+        score += 30
+        reasons.append("close-like attributes")
+
+    if any(symbol in attrs_blob for symbol in _DISCOVERY_SYMBOL_TEXT):
+        score += 12
+        reasons.append("symbol in attributes")
+
+    if "cookie" in attrs_blob and ("accept" in attrs_blob or "agree" in attrs_blob):
+        score += 25
+        reasons.append("cookie consent action")
+
+    popup_ancestor = _discovery_find_popup_ancestor(tag)
+    if popup_ancestor:
+        score += 25
+        reasons.append("inside popup-like container")
+
+    if _discovery_get_attr(tag, "aria-label").strip():
+        score += 8
+        reasons.append("has aria-label")
+
+    if tag.has_attr("disabled"):
+        score -= 20
+        reasons.append("disabled")
+
+    return score, reasons
+
+
+def _discover_popup_close_scored_candidates_from_html(
+    html_text: str,
+    *,
+    top_n: int = 5,
+) -> list[dict[str, object]]:
+    """
+    Scan HTML and return scored XPath candidates for popup close controls.
+
+    The returned dicts include: xpath, score, reason.
+    """
+    try:
+        soup = BeautifulSoup(html_text, "html.parser")
+    except Exception:
+        return []
+
+    candidates: list[tuple[int, str, str]] = []
+    for tag in soup.find_all(["button", "a", "div", "span"]):
+        score, reasons = _discovery_score_close_candidate(tag)
+        if score < 30:
+            continue
+        xpath = _discovery_build_xpath(tag)
+        candidates.append((score, xpath, ", ".join(reasons)))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+
+    def validate_xpath(xpath: str) -> bool:
+        try:
+            tree = lxml_html.fromstring(html_text)
+            return bool(tree.xpath(xpath))
+        except Exception:
+            return False
+
+    out: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for score, xpath, reason in candidates:
+        if xpath in seen:
+            continue
+        if validate_xpath(xpath):
+            seen.add(xpath)
+            out.append({"xpath": xpath, "score": score, "reason": reason})
+            if len(out) >= top_n:
+                break
+    return out
+
+
+def _discover_popup_close_xpaths_from_html(
+    html_text: str,
+    *,
+    top_n: int = 5,
+) -> list[str]:
+    """
+    Scan HTML and return high-confidence XPath candidates for popup close controls.
+
+    This is used as a last-resort fallback when our deterministic selector lists
+    fail to match any visible dismiss controls.
+    """
+    candidates = _discover_popup_close_scored_candidates_from_html(
+        html_text,
+        top_n=top_n,
+    )
+    return [str(c["xpath"]) for c in candidates]
+
+
 def _popup_event(
     selector: str,
     action: str,
@@ -210,6 +462,7 @@ async def dismiss_popups(page: Page) -> list[dict]:
 
     events: list[dict] = []
     dismissed_count = 0
+    saw_any_visible_candidate = False
     try:
         # Small deterministic wait before first popup pass to allow late overlays (v1.26).
         await asyncio.sleep(POPUP_PRE_PASS_WAIT_MS / 1000)
@@ -221,6 +474,7 @@ async def dismiss_popups(page: Page) -> list[dict]:
                 element = page.locator(selector).first
                 if not await element.is_visible(timeout=POPUP_VISIBILITY_TIMEOUT_MS):
                     continue
+                saw_any_visible_candidate = True
                 text = await _element_dismiss_text(element)
                 if is_risky_cta_text(text):
                     logger.debug(
@@ -230,7 +484,16 @@ async def dismiss_popups(page: Page) -> list[dict]:
                         text_preview=(text[:80] + "…") if len(text) > 80 else text or "(empty)",
                     )
                     continue
-                if not is_safe_dismiss_text(text):
+                if not text:
+                    if not _selector_allows_empty_text_dismiss(selector):
+                        logger.debug(
+                            "popup_skipped",
+                            selector=selector,
+                            reason="empty_text_not_close",
+                            text_preview="(empty)",
+                        )
+                        continue
+                elif not is_safe_dismiss_text(text):
                     logger.debug(
                         "popup_skipped",
                         selector=selector,
@@ -274,6 +537,67 @@ async def dismiss_popups(page: Page) -> list[dict]:
                 logger.debug("popup_click_failed", selector=selector)
     except Exception as e:
         logger.warning("popup_pass_error", error=str(e), error_type=type(e).__name__)
+
+    should_run_html_discovery_fallback = (
+        dismissed_count < MAX_DISMISSALS_PER_PASS
+        and (not saw_any_visible_candidate or dismissed_count == 1)
+    )
+    if should_run_html_discovery_fallback:
+        html_text: object | None = None
+        try:
+            html_text = await page.content()
+        except Exception:
+            html_text = None
+
+        if isinstance(html_text, str) and html_text.strip():
+            candidates = _discover_popup_close_scored_candidates_from_html(
+                html_text,
+                top_n=MAX_DISMISSALS_PER_PASS,
+            )
+            xpaths = [str(c["xpath"]) for c in candidates]
+
+            for attempt_one_based, xpath in enumerate(xpaths, start=1):
+                if dismissed_count >= MAX_DISMISSALS_PER_PASS:
+                    break
+                try:
+                    element = page.locator(f"xpath={xpath}").first
+                    if not await element.is_visible(timeout=POPUP_VISIBILITY_TIMEOUT_MS):
+                        continue
+                    text = await _element_dismiss_text(element)
+                    if is_risky_cta_text(text):
+                        continue
+                    if not text:
+                        if not _selector_allows_empty_text_dismiss(xpath):
+                            continue
+                    elif not is_safe_dismiss_text(text):
+                        continue
+                    if not await _is_within_popup_container(element):
+                        continue
+                    await element.click(timeout=POPUP_CLICK_TIMEOUT_MS)
+                    ts = datetime.now(timezone.utc).isoformat()
+                    events.append(
+                        _popup_event(
+                            xpath,
+                            "dismiss_click",
+                            "success",
+                            attempt_one_based,
+                            ts,
+                            page.url,
+                        )
+                    )
+                    dismissed_count += 1
+                    logger.debug("popup_dismissed", selector=xpath)
+                    await asyncio.sleep(POPUP_SETTLE_AFTER_DISMISS_MS / 1000)
+                except Exception:
+                    events.append(
+                        _popup_event(
+                            xpath,
+                            "dismiss_click",
+                            "failure",
+                            attempt_one_based,
+                            current_url=page.url,
+                        )
+                    )
     return events
 
 

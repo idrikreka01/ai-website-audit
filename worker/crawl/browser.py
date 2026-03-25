@@ -11,6 +11,39 @@ from playwright.async_api import Browser, BrowserContext
 from worker.crawl.constants import VIEWPORT_CONFIGS, Viewport
 
 
+STEALTH_INIT_SCRIPT = """
+(() => {
+  try {
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  } catch (e) {}
+
+  try {
+    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+  } catch (e) {}
+
+  try {
+    Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });
+  } catch (e) {}
+
+  try {
+    window.chrome = window.chrome || { runtime: {} };
+  } catch (e) {}
+
+  try {
+    const originalQuery = navigator.permissions && navigator.permissions.query;
+    if (originalQuery) {
+      navigator.permissions.query = (parameters) => {
+        if (parameters && parameters.name === 'notifications') {
+          return Promise.resolve({ state: 'denied', onchange: null });
+        }
+        return originalQuery(parameters);
+      };
+    }
+  } catch (e) {}
+})();
+"""
+
+
 async def create_browser_context(
     browser: Browser,
     viewport: Viewport,
@@ -33,4 +66,5 @@ async def create_browser_context(
         locale="en-US",
     )
 
+    await context.add_init_script(STEALTH_INIT_SCRIPT)
     return context

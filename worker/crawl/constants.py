@@ -1,3 +1,5 @@
+# ABOUTME: Central crawl constants for deterministic behavior.
+# ABOUTME: Popup selector lists and readiness-related thresholds.
 """
 Crawl constants: viewport configs, timeouts, PDP patterns, excluded segments.
 """
@@ -299,6 +301,10 @@ POPUP_SELECTORS_MODAL = (
     '[id*="popup"] button[class*="close"]',
     '[class*="popup"] button[class*="close"]',
     '[role="dialog"] button[aria-label*="close" i]',
+    '[role="dialog"] [role="button"][aria-label*="close" i]',
+    '[role="dialog"] span[role="button"][aria-label*="close" i]',
+    '[role="dialog"] [role="button"][aria-label*="dismiss" i]',
+    '[role="dialog"] span[role="button"][aria-label*="dismiss" i]',
     '[role="dialog"] [class*="close"]',
     '[class*="closeModal"] button',
     '[class*="close-modal"] button',
@@ -309,6 +315,10 @@ POPUP_SELECTORS_MODAL = (
     ".icon-close",
     "i.icon-close",
     'button:has-text("Close")',
+    '[role="button"][aria-label*="close" i]',
+    'span[role="button"][aria-label*="close" i]',
+    '[role="button"][aria-label*="dismiss" i]',
+    'span[role="button"][aria-label*="dismiss" i]',
 )
 
 # Age gate (dismiss/enter only; no "under age" clicks)
@@ -360,8 +370,8 @@ POPUP_SETTLE_AFTER_DISMISS_MS = 750
 # Settle delay after overlay hide fallback, before extraction 
 OVERLAY_HIDE_SETTLE_MS = 750
 
-# Extra deterministic wait before first popup pass to catch late overlays 
-POPUP_PRE_PASS_WAIT_MS = 500
+# Extra deterministic wait before first popup pass to catch late overlays
+POPUP_PRE_PASS_WAIT_MS = 5000
 
 # Safe dismiss keywords (button/link text); minimal set for deterministic matching.
 # Only elements whose normalized text matches one of these are considered safe to click.

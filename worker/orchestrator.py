@@ -1,3 +1,5 @@
+# ABOUTME: Orchestrates audit session flow and tier-gated answers.
+# ABOUTME: Handles simple-mode evaluation and Telegram steps.
 """
 Session orchestrator: full flow from homepage crawl → PDP discovery → PDP crawl → status rollup.
 
@@ -8,7 +10,9 @@ No behavior change.
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+import json
+from typing import Any, Optional
+from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -527,6 +531,437 @@ def _run_audit_evaluation_for_page_types(
             )
 
 
+def _run_simple_tier_gated_answers(
+    session_uuid: UUID,
+    domain: str,
+    repository: AuditRepository,
+    url: str,
+) -> None:
+    """
+    For simple mode: generate audit answers with tier gating.
+
+    Tier 1 is evaluated first. If any Tier 1 question is not PASS, Tier 2 and
+    Tier 3 are not evaluated.
+    """
+    from audit_evaluator import AuditEvaluator
+    from get_questions_by_page_type import get_questions_by_page_type
+    from shared.db import get_audit_questions_table, get_db_session
+
+    normalized_domain = (domain or "").strip().lower()
+    if normalized_domain.startswith("www."):
+        normalized_domain = normalized_domain[4:]
+    normalized_domain = normalized_domain or "unknown-domain"
+    session_id_str = f"{normalized_domain}__{session_uuid}"
+
+    page_types = _discover_page_types_from_artifacts(session_id_str)
+    if not page_types:
+        logger.info(
+            "simple_tier_gated_answers_skipped",
+            session_id=str(session_uuid),
+            reason="no_page_types_found",
+        )
+        return
+
+    evaluator = AuditEvaluator(artifacts_dir="./artifacts")
+    answers_model_candidates = ["gpt-5.4-nano", "gpt-5.4-mini"]
+    answers_model = answers_model_candidates[0]
+    used_answers_model = answers_model
+
+    def _tier_results_passed(results_by_question: dict) -> bool:
+        return all((r or {}).get("result") == "pass" for r in results_by_question.values())
+
+    def _run_audit_simple_with_model_fallback(
+        *,
+        session_id: str,
+        page_type: str,
+        questions: dict[str, dict[str, Any]],
+    ) -> tuple[dict[str, Any], dict[str, Any], str]:
+        nonlocal answers_model, used_answers_model
+
+        last_exc: Exception | None = None
+        for candidate in answers_model_candidates:
+            try:
+                results, cost_summary = evaluator.run_audit(
+                    session_id=session_id,
+                    page_type=page_type,
+                    questions=questions,
+                    chunk_size=30000,
+                    save_response=False,
+                    include_screenshots=False,
+                    repository=repository,
+                    return_cost=True,
+                    model=candidate,
+                )
+                answers_model = candidate
+                used_answers_model = candidate
+                return results, cost_summary, candidate
+            except Exception as e:
+                last_exc = e
+                err = str(e).lower()
+                if "model_not_found" in err or "does not exist" in err:
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Simple audit model fallback failed unexpectedly")
+
+    def _write_simple_answers_json(
+        merged_results_by_page_type: dict[str, dict],
+        merged_costs_by_page_type: dict[str, dict[str, float]],
+    ) -> None:
+        artifacts_root = Path(str(evaluator.artifacts_dir))
+        for folder_page_type, results in merged_results_by_page_type.items():
+            if not results:
+                continue
+
+            normalized_page_type = "product" if folder_page_type == "pdp" else folder_page_type
+            output_dir = artifacts_root / session_id_str / folder_page_type
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / "answers.json"
+
+            costs = merged_costs_by_page_type.get(folder_page_type) or {}
+            input_tokens = float(costs.get("input_tokens") or 0.0)
+            output_tokens = float(costs.get("output_tokens") or 0.0)
+            total_tokens = float(costs.get("total_tokens") or 0.0)
+            estimated_cost_usd = float(costs.get("estimated_cost_usd") or 0.0)
+
+            metadata: dict[str, Any] = {
+                "model": answers_model,
+                "session_id": session_id_str,
+                "page_type": normalized_page_type,
+                "input_tokens": int(input_tokens),
+                "output_tokens": int(output_tokens),
+                "total_tokens": int(total_tokens),
+                "estimated_cost_usd": estimated_cost_usd,
+            }
+
+            num_questions = len(results)
+            max_questions_per_batch = 30
+            num_batches = (num_questions + max_questions_per_batch - 1) // max_questions_per_batch
+            if num_batches > 1:
+                metadata.update({"batched": True, "num_batches": num_batches})
+
+            output_data = {"metadata": metadata, "results": results}
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+    tier1_cost_usd = 0.0
+    tier2_cost_usd = 0.0
+    tier3_cost_usd = 0.0
+
+    tier1_results_by_page_type: dict[str, dict] = {}
+    tier2_results_by_page_type: dict[str, dict] = {}
+    tier3_results_by_page_type: dict[str, dict] = {}
+
+    tier1_costs_by_page_type: dict[str, dict[str, float]] = {}
+    tier2_costs_by_page_type: dict[str, dict[str, float]] = {}
+    tier3_costs_by_page_type: dict[str, dict[str, float]] = {}
+
+    page_questions_by_tier: dict[str, dict[int, dict[str, dict]]] = {}
+    for page_type in page_types:
+        normalized_page_type = "product" if page_type == "pdp" else page_type
+        questions_full = get_questions_by_page_type(normalized_page_type).get("question", {})
+        if not questions_full:
+            continue
+
+        question_ids = [int(qid) for qid in questions_full.keys() if str(qid).isdigit()]
+        if not question_ids:
+            continue
+
+        with get_db_session() as db_session:
+            audit_questions_table = get_audit_questions_table()
+            from sqlalchemy import select
+
+            stmt = (
+                select(audit_questions_table)
+                .where(audit_questions_table.c.page_type == normalized_page_type)
+                .where(audit_questions_table.c.question_id.in_(question_ids))
+            )
+            rows = db_session.execute(stmt).all()
+
+        tier_by_question_id: dict[str, int] = {
+            str(row.question_id): row.tier
+            for row in rows
+            if getattr(row, "tier", None) is not None
+        }
+
+        tier_questions: dict[int, dict[str, dict]] = {1: {}, 2: {}, 3: {}}
+        for question_id_str, qdata in questions_full.items():
+            tier = tier_by_question_id.get(str(question_id_str))
+            if tier in tier_questions:
+                tier_questions[tier][question_id_str] = qdata
+
+        page_questions_by_tier[page_type] = tier_questions
+
+    if not page_questions_by_tier:
+        logger.info(
+            "simple_tier_gated_answers_skipped",
+            session_id=str(session_uuid),
+            reason="no_questions_found",
+        )
+        return
+
+    tier1_passed = True
+    tier2_passed = True
+    tier3_eval_ok = True
+    tier2_eval_ok = True
+
+    _send_telegram_step(
+        session_uuid,
+        url,
+        "📥 <b>Tier 1</b>: sending questions...",
+    )
+
+    for page_type, tier_questions in page_questions_by_tier.items():
+        normalized_page_type = "product" if page_type == "pdp" else page_type
+        questions = tier_questions.get(1) or {}
+        if not questions:
+            continue
+
+        try:
+            results, cost_summary, _ = _run_audit_simple_with_model_fallback(
+                session_id=session_id_str,
+                page_type=normalized_page_type,
+                questions=questions,
+            )
+            tier1_results_by_page_type[page_type] = results
+            tier1_passed_for_page = _tier_results_passed(results)
+            tier1_passed = tier1_passed and tier1_passed_for_page
+            tier1_cost_usd += float(cost_summary.get("estimated_cost_usd") or 0.0)
+            tier1_costs_by_page_type[page_type] = cost_summary
+
+            logger.info(
+                "simple_tier1_evaluation_completed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                tier1_passed=tier1_passed_for_page,
+                estimated_cost_usd=float(cost_summary.get("estimated_cost_usd") or 0.0),
+            )
+        except Exception as e:
+            tier1_passed = False
+            logger.error(
+                "simple_tier1_evaluation_failed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            repository.create_log(
+                session_id=session_uuid,
+                level="error",
+                event_type="error",
+                message="Simple tier1 evaluation failed",
+                details={
+                    "page_type": page_type,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+            break
+
+    if not tier1_passed:
+        _write_simple_answers_json(
+            merged_results_by_page_type=tier1_results_by_page_type,
+            merged_costs_by_page_type=tier1_costs_by_page_type,
+        )
+        _send_telegram_step(
+            session_uuid,
+            url,
+            f"🛑 <b>Tier 1</b> did not fully pass. Skipping Tier 2/3.\n\n💰 <b>Simple audit cost</b> for <b>{normalized_domain}</b>: ~${tier1_cost_usd:.2f}",
+        )
+        repository.create_log(
+            session_id=session_uuid,
+            level="info",
+            event_type="navigation",
+            message="Simple tier gating: skipped tiers 2/3",
+            details={"tier1_passed": False, "tier1_cost_usd": tier1_cost_usd},
+        )
+        return
+
+    _send_telegram_step(
+        session_uuid,
+        url,
+        "✅ <b>Tier 1</b> passed. Sending <b>Tier 2</b>...",
+    )
+
+    for page_type, tier_questions in page_questions_by_tier.items():
+        normalized_page_type = "product" if page_type == "pdp" else page_type
+        questions = tier_questions.get(2) or {}
+        if not questions:
+            continue
+
+        try:
+            results, cost_summary, _ = _run_audit_simple_with_model_fallback(
+                session_id=session_id_str,
+                page_type=normalized_page_type,
+                questions=questions,
+            )
+            tier2_results_by_page_type[page_type] = results
+            tier2_passed_for_page = _tier_results_passed(results)
+            tier2_passed = tier2_passed and tier2_passed_for_page
+            tier2_cost_usd += float(cost_summary.get("estimated_cost_usd") or 0.0)
+            tier2_costs_by_page_type[page_type] = cost_summary
+
+            logger.info(
+                "simple_tier2_evaluation_completed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                tier2_passed=tier2_passed_for_page,
+                estimated_cost_usd=float(cost_summary.get("estimated_cost_usd") or 0.0),
+            )
+        except Exception as e:
+            tier2_passed = False
+            tier2_eval_ok = False
+            logger.error(
+                "simple_tier2_evaluation_failed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            repository.create_log(
+                session_id=session_uuid,
+                level="error",
+                event_type="error",
+                message="Simple tier2 evaluation failed",
+                details={
+                    "page_type": page_type,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+            break
+
+    tier1_plus_tier2_results: dict[str, dict] = {}
+    tier1_plus_tier2_costs: dict[str, dict[str, float]] = {}
+    if tier2_eval_ok:
+        page_type_union = set(tier1_results_by_page_type) | set(tier2_results_by_page_type)
+        for pt in page_type_union:
+            merged_results = dict(tier1_results_by_page_type.get(pt) or {})
+            merged_results.update(tier2_results_by_page_type.get(pt) or {})
+            tier1_plus_tier2_results[pt] = merged_results
+
+            c1 = tier1_costs_by_page_type.get(pt) or {}
+            c2 = tier2_costs_by_page_type.get(pt) or {}
+            tier1_plus_tier2_costs[pt] = {
+                "input_tokens": float(c1.get("input_tokens") or 0.0)
+                + float(c2.get("input_tokens") or 0.0),
+                "output_tokens": float(c1.get("output_tokens") or 0.0)
+                + float(c2.get("output_tokens") or 0.0),
+                "total_tokens": float(c1.get("total_tokens") or 0.0)
+                + float(c2.get("total_tokens") or 0.0),
+                "estimated_cost_usd": float(c1.get("estimated_cost_usd") or 0.0)
+                + float(c2.get("estimated_cost_usd") or 0.0),
+            }
+    else:
+        tier1_plus_tier2_results = tier1_results_by_page_type
+        tier1_plus_tier2_costs = tier1_costs_by_page_type
+
+    _write_simple_answers_json(
+        merged_results_by_page_type=tier1_plus_tier2_results,
+        merged_costs_by_page_type=tier1_plus_tier2_costs,
+    )
+
+    if not tier2_passed:
+        _send_telegram_step(
+            session_uuid,
+            url,
+            f"🛑 <b>Tier 2</b> did not fully pass. Skipping Tier 3.\n\n💰 <b>Simple audit cost</b> for <b>{normalized_domain}</b>: ~${(tier1_cost_usd + tier2_cost_usd):.2f}",
+        )
+        repository.create_log(
+            session_id=session_uuid,
+            level="info",
+            event_type="navigation",
+            message="Simple tier gating: skipped tier 3",
+            details={"tier1_passed": True, "tier2_passed": False, "tier2_cost_usd": tier2_cost_usd},
+        )
+        return
+
+    _send_telegram_step(
+        session_uuid,
+        url,
+        "✅ <b>Tier 2</b> passed. Sending <b>Tier 3</b>...",
+    )
+
+    for page_type, tier_questions in page_questions_by_tier.items():
+        normalized_page_type = "product" if page_type == "pdp" else page_type
+        questions = tier_questions.get(3) or {}
+        if not questions:
+            continue
+
+        try:
+            results, cost_summary, _ = _run_audit_simple_with_model_fallback(
+                session_id=session_id_str,
+                page_type=normalized_page_type,
+                questions=questions,
+            )
+            tier3_results_by_page_type[page_type] = results
+            tier3_cost_usd += float(cost_summary.get("estimated_cost_usd") or 0.0)
+            tier3_costs_by_page_type[page_type] = cost_summary
+
+            logger.info(
+                "simple_tier3_evaluation_completed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                estimated_cost_usd=float(cost_summary.get("estimated_cost_usd") or 0.0),
+            )
+        except Exception as e:
+            tier3_eval_ok = False
+            logger.error(
+                "simple_tier3_evaluation_failed",
+                session_id=str(session_uuid),
+                page_type=page_type,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            repository.create_log(
+                session_id=session_uuid,
+                level="error",
+                event_type="error",
+                message="Simple tier3 evaluation failed",
+                details={
+                    "page_type": page_type,
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                },
+            )
+            break
+
+    if tier3_eval_ok:
+        tier1_plus_tier2_plus_tier3_results: dict[str, dict] = {}
+        tier1_plus_tier2_plus_tier3_costs: dict[str, dict[str, float]] = {}
+        page_type_union = set(tier1_plus_tier2_results) | set(tier3_results_by_page_type)
+        for pt in page_type_union:
+            r12 = tier1_plus_tier2_results.get(pt) or {}
+            merged_results = dict(r12)
+            merged_results.update(tier3_results_by_page_type.get(pt) or {})
+            tier1_plus_tier2_plus_tier3_results[pt] = merged_results
+
+            c12 = tier1_plus_tier2_costs.get(pt) or {}
+            c3 = tier3_costs_by_page_type.get(pt) or {}
+            tier1_plus_tier2_plus_tier3_costs[pt] = {
+                "input_tokens": float(c12.get("input_tokens") or 0.0)
+                + float(c3.get("input_tokens") or 0.0),
+                "output_tokens": float(c12.get("output_tokens") or 0.0)
+                + float(c3.get("output_tokens") or 0.0),
+                "total_tokens": float(c12.get("total_tokens") or 0.0)
+                + float(c3.get("total_tokens") or 0.0),
+                "estimated_cost_usd": float(c12.get("estimated_cost_usd") or 0.0)
+                + float(c3.get("estimated_cost_usd") or 0.0),
+            }
+        _write_simple_answers_json(
+            merged_results_by_page_type=tier1_plus_tier2_plus_tier3_results,
+            merged_costs_by_page_type=tier1_plus_tier2_plus_tier3_costs,
+        )
+
+    _send_telegram_step(
+        session_uuid,
+        url,
+        f"✅ <b>Tier 3</b>: completed.\n\n💰 <b>Simple audit cost</b> for <b>{normalized_domain}</b>: ~${(tier1_cost_usd + tier2_cost_usd + tier3_cost_usd):.2f}",
+    )
+
+
 def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository) -> None:
     """
     Run full audit session: homepage crawl, PDP discovery, PDP crawl, status rollup.
@@ -843,6 +1278,28 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 session_id=str(session_uuid),
             )
 
+        return
+
+    if getattr(config, "checkout_processing_mode", "simple") == "simple":
+        logger.info(
+            "simple_mode_tier_gated_answers",
+            session_id=str(session_uuid),
+            reason="CHECKOUT_PROCESSING_MODE=simple",
+        )
+        repository.create_log(
+            session_id=session_uuid,
+            level="info",
+            event_type="navigation",
+            message="Simple mode: started tier-gated answers generation",
+            details={"checkout_processing_mode": "simple"},
+        )
+
+        _run_simple_tier_gated_answers(
+            session_uuid=session_uuid,
+            domain=domain,
+            repository=repository,
+            url=url,
+        )
         return
 
     _run_audit_evaluation_for_page_types(

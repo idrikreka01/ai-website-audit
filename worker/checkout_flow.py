@@ -19,6 +19,7 @@ from playwright.async_api import TimeoutError as PWTimeout
 
 from shared.config import get_config
 from shared.logging import get_logger
+from shared.telegram import send_telegram_message
 from worker.artifacts import (
     save_features_json,
     save_html_gz,
@@ -36,6 +37,7 @@ from worker.crawl.readiness import handle_popups_form
 from worker.crawl.navigation_retry import navigate_with_retry
 from worker.html_analysis import analyze_product_html
 from worker.repository import AuditRepository
+from worker.simple_selector_discovery import discover_checkout_xpaths
 
 logger = get_logger(__name__)
 
@@ -48,6 +50,8 @@ async def run_checkout_flow(
     viewport: str,
     domain: str,
     repository: AuditRepository,
+    simple_add_to_cart_xpaths: Optional[list[str]] = None,
+    simple_checkout_xpaths: Optional[list[str]] = None,
 ) -> dict:
     """
     Run checkout flow: select variants, add to cart, navigate to cart/checkout.
@@ -68,6 +72,13 @@ async def run_checkout_flow(
         viewport=viewport,
         domain=domain,
     )
+
+    config = get_config()
+    processing_mode = getattr(config, "checkout_processing_mode", "simple")
+    simple_mode = processing_mode == "simple"
+    if processing_mode not in {"simple", "advanced"}:
+        logger.warning("invalid_checkout_processing_mode", mode=processing_mode)
+        simple_mode = True
 
     try:
         nav_result = await navigate_with_retry(
@@ -91,7 +102,7 @@ async def run_checkout_flow(
         variant_groups = html_analysis_json.get("variant_groups", [])
         has_variants = html_analysis_json.get("has_variants", False)
 
-        if has_variants and variant_groups:
+        if not simple_mode and has_variants and variant_groups:
             logger.info(
                 "selecting_variants",
                 count=len(variant_groups),
@@ -113,6 +124,8 @@ async def run_checkout_flow(
         has_add_to_cart = add_to_cart_config.get("found", False) or bool(
             add_to_cart_config.get("selector")
         )
+        if simple_mode:
+            has_add_to_cart = True
         if has_add_to_cart:
             await asyncio.sleep(2)
 
@@ -120,9 +133,19 @@ async def run_checkout_flow(
             added = False
 
             for attempt in range(1, max_add_attempts + 1):
-                added = await _add_to_cart(
-                    page, add_to_cart_config, repository, session_id, viewport, domain
-                )
+                if simple_mode:
+                    added = await _add_to_cart_simple(
+                        page,
+                        repository,
+                        session_id,
+                        viewport,
+                        domain,
+                        selectors=simple_add_to_cart_xpaths,
+                    )
+                else:
+                    added = await _add_to_cart(
+                        page, add_to_cart_config, repository, session_id, viewport, domain
+                    )
                 if added:
                     break
 
@@ -147,15 +170,20 @@ async def run_checkout_flow(
                 await wait_for_page_ready(page, soft_timeout=5000)
                 await handle_popups_form(page, max_passes=2)
 
-                cart_navigated, cart_load_timings = await _navigate_to_cart(
-                    page,
-                    product_url,
-                    session_id,
-                    viewport,
-                    domain,
-                    repository,
-                    analysis_data=html_analysis_json,
-                )
+                if simple_mode:
+                    cart_navigated, cart_load_timings = await _navigate_to_cart_simple(
+                        page, product_url, session_id, viewport, domain, repository
+                    )
+                else:
+                    cart_navigated, cart_load_timings = await _navigate_to_cart(
+                        page,
+                        product_url,
+                        session_id,
+                        viewport,
+                        domain,
+                        repository,
+                        analysis_data=html_analysis_json,
+                    )
                 result["cart_navigation"]["status"] = "completed" if cart_navigated else "failed"
 
                 if cart_navigated:
@@ -164,18 +192,38 @@ async def run_checkout_flow(
                     await handle_popups_form(page, max_passes=2)
 
                     cart_analysis = await _capture_page_payloads(
-                        page, "cart", session_id, viewport, domain, repository, cart_load_timings
-                    )
-
-                    checkout_navigated, checkout_load_timings = await _navigate_to_checkout(
                         page,
-                        product_url,
+                        "cart",
                         session_id,
                         viewport,
                         domain,
                         repository,
-                        cart_analysis=cart_analysis,
+                        cart_load_timings,
+                        run_html_analysis=(not simple_mode),
                     )
+
+                    if simple_mode:
+                        await handle_popups_form(page, max_passes=2)
+                        checkout_navigated, checkout_load_timings = await _navigate_to_checkout_simple(
+                            page,
+                            product_url,
+                            session_id,
+                            viewport,
+                            domain,
+                            repository,
+                            selectors=simple_checkout_xpaths,
+                        )
+                    else:
+                        await handle_popups_form(page, max_passes=2)
+                        checkout_navigated, checkout_load_timings = await _navigate_to_checkout(
+                            page,
+                            product_url,
+                            session_id,
+                            viewport,
+                            domain,
+                            repository,
+                            cart_analysis=cart_analysis,
+                        )
                     result["checkout_navigation"]["status"] = (
                         "completed" if checkout_navigated else "failed"
                     )
@@ -217,6 +265,23 @@ async def run_checkout_flow(
                     analysis_data=html_analysis_json,
                 )
                 result["cart_navigation"]["status"] = "completed" if cart_navigated else "failed"
+                config = get_config()
+                if config.telegram_bot_token and config.telegram_chat_id:
+                    try:
+                        msg = (
+                            "🧪 Simple flow: cart navigation\n"
+                            f"domain: {domain}\n"
+                            f"viewport: {viewport}\n"
+                            f"session_id: {session_id}\n"
+                            f"status: {result['cart_navigation']['status']}"
+                        )
+                        send_telegram_message(
+                            bot_token=config.telegram_bot_token,
+                            chat_id=config.telegram_chat_id,
+                            message=msg,
+                        )
+                    except Exception:
+                        pass
                 if cart_navigated:
                     await wait_for_page_ready(page, soft_timeout=10000)
                     await scroll_sequence(page)
@@ -242,6 +307,22 @@ async def run_checkout_flow(
                     result["checkout_navigation"]["status"] = (
                         "completed" if checkout_navigated else "failed"
                     )
+                    if config.telegram_bot_token and config.telegram_chat_id:
+                        try:
+                            msg = (
+                                "🧪 Simple flow: checkout navigation\n"
+                                f"domain: {domain}\n"
+                                f"viewport: {viewport}\n"
+                                f"session_id: {session_id}\n"
+                                f"status: {result['checkout_navigation']['status']}"
+                            )
+                            send_telegram_message(
+                                bot_token=config.telegram_bot_token,
+                                chat_id=config.telegram_chat_id,
+                                message=msg,
+                            )
+                        except Exception:
+                            pass
                     if checkout_navigated:
                         await wait_for_page_ready(page, soft_timeout=10000)
                         await scroll_sequence(page)
@@ -1102,6 +1183,124 @@ async def _add_to_cart_fallback(
     return False
 
 
+async def _add_to_cart_simple(
+    page: Page,
+    repository: AuditRepository,
+    session_id: UUID,
+    viewport: str,
+    domain: str,
+    selectors: Optional[list[str]] = None,
+) -> bool:
+    if not selectors:
+        logger.info(
+            "add_to_cart_simple_no_dynamic_selectors_using_fallback",
+            session_id=str(session_id),
+            viewport=viewport,
+            domain=domain,
+        )
+        config = get_config()
+        if config.telegram_bot_token and config.telegram_chat_id:
+            try:
+                send_telegram_message(
+                    bot_token=config.telegram_bot_token,
+                    chat_id=config.telegram_chat_id,
+                    message=(
+                        "🧪 Simple flow: no dynamic ATC selectors, using fallback list\n"
+                        f"domain: {domain}\n"
+                        f"viewport: {viewport}\n"
+                        f"session_id: {session_id}"
+                    ),
+                )
+            except Exception:
+                pass
+        return await _add_to_cart_fallback(page, repository, session_id, viewport, domain)
+
+    for selector in selectors or []:
+        try:
+            locator = page.locator(f"xpath={selector}")
+            if await locator.count() == 0:
+                continue
+            elem = locator.first
+            await elem.scroll_into_view_if_needed(timeout=3000)
+            if not await elem.is_visible(timeout=2000):
+                continue
+            await elem.click(timeout=5000)
+            await asyncio.sleep(2)
+            logger.info(
+                "add_to_cart_simple_clicked",
+                selector=selector,
+                session_id=str(session_id),
+                viewport=viewport,
+                domain=domain,
+            )
+            repository.create_log(
+                session_id=session_id,
+                level="info",
+                event_type="navigation",
+                message="Add to cart clicked (simple mode)",
+                details={"selector": selector},
+            )
+            return True
+        except Exception as e:
+            logger.debug(
+                "add_to_cart_simple_selector_failed",
+                selector=selector,
+                error=str(e)[:100],
+                session_id=str(session_id),
+            )
+    logger.info(
+        "add_to_cart_simple_dynamic_failed_using_fallback",
+        session_id=str(session_id),
+        viewport=viewport,
+        domain=domain,
+        attempted_count=len(selectors or []),
+    )
+    config = get_config()
+    if config.telegram_bot_token and config.telegram_chat_id:
+        try:
+            send_telegram_message(
+                bot_token=config.telegram_bot_token,
+                chat_id=config.telegram_chat_id,
+                message=(
+                    "🧪 Simple flow: dynamic ATC selectors failed, using fallback list\n"
+                    f"domain: {domain}\n"
+                    f"viewport: {viewport}\n"
+                    f"session_id: {session_id}\n"
+                    f"attempted_dynamic: {len(selectors or [])}"
+                ),
+            )
+        except Exception:
+            pass
+    return await _add_to_cart_fallback(page, repository, session_id, viewport, domain)
+
+
+async def _navigate_to_cart_simple(
+    page: Page,
+    base_url: str,
+    session_id: UUID,
+    viewport: str,
+    domain: str,
+    repository: AuditRepository,
+) -> tuple[bool, dict]:
+    cart_url = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}/cart"
+    try:
+        nav_result = await navigate_with_retry(
+            page,
+            cart_url,
+            session_id=session_id,
+            repository=repository,
+            page_type="cart",
+            viewport=viewport,
+            domain=domain,
+        )
+        if not nav_result.success:
+            return False, {}
+        load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+        return True, load_timings
+    except Exception:
+        return False, {}
+
+
 async def _open_cart_ui_from_analysis(
     page: Page,
     analysis_data: dict,
@@ -1674,6 +1873,54 @@ async def _navigate_to_checkout(
     return False, {}
 
 
+async def _navigate_to_checkout_simple(
+    page: Page,
+    base_url: str,
+    session_id: UUID,
+    viewport: str,
+    domain: str,
+    repository: AuditRepository,
+    selectors: Optional[list[str]] = None,
+) -> tuple[bool, dict]:
+    dynamic_selectors = await discover_checkout_xpaths(page, top=10)
+    merged_selectors = list(dict.fromkeys(dynamic_selectors + (selectors or [])))
+
+    for selector in merged_selectors:
+        try:
+            locator = page.locator(f"xpath={selector}")
+            if await locator.count() == 0:
+                continue
+            elem = locator.first
+            if not await elem.is_visible(timeout=2000):
+                continue
+            await elem.scroll_into_view_if_needed(timeout=3000)
+            await elem.click(timeout=5000)
+            await asyncio.sleep(2)
+            load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+            if "checkout" in page.url.lower():
+                return True, load_timings
+        except Exception:
+            continue
+
+    try:
+        checkout_url = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}/checkout"
+        nav_result = await navigate_with_retry(
+            page,
+            checkout_url,
+            session_id=session_id,
+            repository=repository,
+            page_type="checkout",
+            viewport=viewport,
+            domain=domain,
+        )
+        if nav_result.success:
+            load_timings = await wait_for_page_ready(page, soft_timeout=5000)
+            return True, load_timings
+    except Exception:
+        pass
+    return False, {}
+
+
 async def _capture_page_payloads(
     page: Page,
     page_type: str,
@@ -1682,6 +1929,7 @@ async def _capture_page_payloads(
     domain: str,
     repository: AuditRepository,
     load_timings: Optional[dict] = None,
+    run_html_analysis: bool = True,
 ) -> Optional[dict]:
     """Capture artifacts for a page. Returns cart html_analysis dict when page_type is cart."""
     try:
@@ -1746,7 +1994,7 @@ async def _capture_page_payloads(
         )
 
         cart_analysis_result = None
-        if page_type == "cart" and html_content:
+        if page_type == "cart" and html_content and run_html_analysis:
             cart_analysis_result = analyze_product_html(
                 None,
                 session_id,

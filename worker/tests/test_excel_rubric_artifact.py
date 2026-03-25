@@ -9,6 +9,7 @@ record is created.
 from __future__ import annotations
 
 import os
+import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -194,4 +195,129 @@ def test_save_excel_rubric_workbook_writes_output_and_creates_artifact(monkeypat
             "Exact Fix:",
         ]
         assert output_header == ["Category", "Questions", "AI grade"]
+
+
+def test_excel_rubric_tier_gating_uses_answers_json_fallback(monkeypatch):
+    session_id = uuid4()
+    domain = "example.com"
+
+    class _RepoStubMulti:
+        def __init__(self):
+            self.created_artifacts = []
+
+        def list_questions(self, page_type=None, category=None):
+            return [
+                {
+                    "id": uuid4(),
+                    "question_id": 1,
+                    "key": "Q1",
+                    "stage": "Awareness",
+                    "category": "Homepage",
+                    "page_type": "homepage",
+                    "tier": 1,
+                    "severity": 2,
+                    "question": "Tier 1 question",
+                    "bar_chart_category": "Homepage Clarity",
+                    "exact_fix": "Fix Q1",
+                    "allowed_evidence_types": ["screenshot"],
+                    "pass_criteria": "Pass Q1",
+                    "fail_criteria": "Fail Q1",
+                    "notes": "",
+                },
+                {
+                    "id": uuid4(),
+                    "question_id": 2,
+                    "key": "Q2",
+                    "stage": "Awareness",
+                    "category": "Homepage",
+                    "page_type": "homepage",
+                    "tier": 2,
+                    "severity": 3,
+                    "question": "Tier 2 question",
+                    "bar_chart_category": "Homepage Clarity",
+                    "exact_fix": "Fix Q2",
+                    "allowed_evidence_types": ["screenshot"],
+                    "pass_criteria": "Pass Q2",
+                    "fail_criteria": "Fail Q2",
+                    "notes": "",
+                },
+            ]
+
+        def get_session_by_id(self, session_id_value):
+            return {"id": session_id_value, "url": "https://www.example.com/"}
+
+        def get_audit_results_by_session_id(self, session_id_str):
+            return []
+
+        def get_pages_by_session_id(self, session_id_value):
+            return []
+
+        def get_artifacts_by_session_id(self, session_id_value):
+            return []
+
+        def create_artifact(
+            self,
+            *,
+            session_id,
+            page_id,
+            artifact_type,
+            storage_uri,
+            size_bytes,
+            retention_until=None,
+            checksum=None,
+        ):
+            self.created_artifacts.append(
+                {
+                    "session_id": session_id,
+                    "page_id": page_id,
+                    "artifact_type": artifact_type,
+                    "storage_uri": storage_uri,
+                    "size_bytes": size_bytes,
+                    "retention_until": retention_until,
+                    "checksum": checksum,
+                }
+            )
+            return self.created_artifacts[-1]
+
+        def create_log(self, *, session_id, level, event_type, message, details=None):
+            return None
+
+    repo = _RepoStubMulti()
+
+    with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+        from worker import storage as storage_mod
+        from worker import excel_rubric as excel_mod
+
+        cfg = _config(tmpdir)
+        monkeypatch.setattr(storage_mod, "get_config", lambda: cfg)
+        monkeypatch.setattr(excel_mod, "get_config", lambda: cfg)
+        monkeypatch.setattr(excel_mod, "get_storage_uri", storage_mod.get_storage_uri)
+
+        answers_path = Path(tmpdir) / f"{domain}__{session_id}" / "homepage" / "answers.json"
+        answers_path.parent.mkdir(parents=True, exist_ok=True)
+        answers_path.write_text(
+            json.dumps(
+                {
+                    "metadata": {},
+                    "results": {
+                        "1": {"result": "fail"},
+                        "2": {"result": "pass"},
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        result = save_excel_rubric_workbook(repo, session_id, domain)
+        assert result is True
+
+        path = Path(tmpdir) / f"{domain}__{session_id}" / "output.xlsx"
+        wb = load_workbook(path)
+        output_ws = wb["Output"]
+
+        rows = list(output_ws.iter_rows(min_row=2, values_only=True))
+        assert len(rows) == 1
+        assert rows[0][1] == "Tier 1 question"
+        assert rows[0][2] == "fail"
 

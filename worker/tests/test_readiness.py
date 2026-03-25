@@ -1,3 +1,5 @@
+# ABOUTME: Unit tests for crawl readiness (popup dismissal, scroll).
+# ABOUTME: Ensures deterministic behavior under mocked Playwright.
 """
 Unit tests for page readiness timing, scroll sequence, and popup dismissal.
 
@@ -23,6 +25,7 @@ from worker.crawl.constants import (
 )
 from worker.crawl.readiness import (
     dismiss_popups,
+    _discover_popup_close_xpaths_from_html,
     run_extraction_retry_prep,
     run_overlay_hide_fallback,
     scroll_sequence,
@@ -331,6 +334,156 @@ async def test_dismiss_popups_skips_non_safe_dismiss_text():
     # No click when text is not safe-dismiss; no successful dismissals
     assert sum(1 for e in events if e.get("result") == "success") == 0
     locator_mock.first.click.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_dismiss_popups_allows_empty_text_close_selectors():
+    """Test dismiss clicks are allowed for close/dismiss selectors even when text is empty."""
+    page = AsyncMock()
+
+    locator_mock = MagicMock()
+    locator_mock.first = AsyncMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+    locator_mock.first.inner_text = AsyncMock(return_value="")
+    locator_mock.first.get_attribute = AsyncMock(return_value=None)
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
+    locator_mock.first.click = AsyncMock()
+
+    page.locator = MagicMock(return_value=locator_mock)
+
+    with patch(
+        "worker.crawl.readiness.get_popup_selectors_in_order",
+        return_value=["button[class*='close']"],
+    ):
+        events = await dismiss_popups(page)
+
+    assert sum(1 for e in events if e.get("result") == "success") == 1
+    locator_mock.first.click.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dismiss_popups_clicks_span_role_button_close_with_aria_label():
+    """Test dismiss clicks match span[role=button] close controls with aria-label."""
+    page = AsyncMock()
+
+    locator_mock = MagicMock()
+    locator_mock.first = AsyncMock()
+    locator_mock.first.is_visible = AsyncMock(return_value=True)
+    locator_mock.first.inner_text = AsyncMock(return_value="")
+    locator_mock.first.get_attribute = AsyncMock(return_value="Close modal")
+    locator_mock.first.evaluate = AsyncMock(return_value=True)
+    locator_mock.first.click = AsyncMock()
+
+    page.locator = MagicMock(return_value=locator_mock)
+
+    with patch(
+        "worker.crawl.readiness.get_popup_selectors_in_order",
+        return_value=['[role="dialog"] span[role="button"][aria-label*="close" i]'],
+    ):
+        events = await dismiss_popups(page)
+
+    assert sum(1 for e in events if e.get("result") == "success") == 1
+    locator_mock.first.click.assert_called_once()
+
+
+def _minimal_close_modal_html() -> str:
+    return (
+        '<section role="dialog" aria-modal="true" aria-label="10% off one-time purchase products">'
+        '<span role="button" tabindex="0" aria-label="Close modal"></span>'
+        "</section>"
+    )
+
+
+@pytest.mark.asyncio
+async def test_discover_popup_close_xpaths_finds_close_modal():
+    html_text = _minimal_close_modal_html()
+    xpaths = _discover_popup_close_xpaths_from_html(html_text, top_n=3)
+    assert any("aria-label" in xpath and "Close modal" in xpath for xpath in xpaths)
+
+
+@pytest.mark.asyncio
+async def test_dismiss_popups_html_discovery_fallback_clicks_close_span_when_selectors_miss():
+    html_text = _minimal_close_modal_html()
+    page = AsyncMock()
+    page.url = "https://example.com/"
+    page.content = AsyncMock(return_value=html_text)
+
+    invisible_locator = MagicMock()
+    invisible_locator.first = AsyncMock()
+    invisible_locator.first.is_visible = AsyncMock(return_value=False)
+
+    click_locator = MagicMock()
+    click_locator.first = AsyncMock()
+    click_locator.first.is_visible = AsyncMock(return_value=True)
+    click_locator.first.inner_text = AsyncMock(return_value="")
+    click_locator.first.get_attribute = AsyncMock(return_value="Close modal")
+    click_locator.first.evaluate = AsyncMock(return_value=True)
+    click_locator.first.click = AsyncMock()
+
+    def locator_side_effect(selector: str):
+        if selector.startswith("xpath="):
+            return click_locator
+        return invisible_locator
+
+    page.locator = MagicMock(side_effect=locator_side_effect)
+
+    with (
+        patch("worker.crawl.readiness.get_popup_selectors_in_order", return_value=["[data-testid='nope']"]),
+        patch(
+            "worker.crawl.readiness.get_config",
+            return_value=MagicMock(telegram_bot_token=None, telegram_chat_id=None),
+        ),
+        patch("shared.telegram.send_telegram_json") as mock_send,
+        patch("worker.crawl.readiness.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        events = await dismiss_popups(page)
+
+    assert sum(1 for e in events if e.get("result") == "success") == 1
+    mock_send.assert_not_called()
+    click_locator.first.click.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_dismiss_popups_html_discovery_does_not_send_scoring_to_telegram_when_configured():
+    html_text = _minimal_close_modal_html()
+    page = AsyncMock()
+    page.url = "https://example.com/"
+    page.content = AsyncMock(return_value=html_text)
+
+    invisible_locator = MagicMock()
+    invisible_locator.first = AsyncMock()
+    invisible_locator.first.is_visible = AsyncMock(return_value=False)
+
+    click_locator = MagicMock()
+    click_locator.first = AsyncMock()
+    click_locator.first.is_visible = AsyncMock(return_value=True)
+    click_locator.first.inner_text = AsyncMock(return_value="")
+    click_locator.first.get_attribute = AsyncMock(return_value="Close modal")
+    click_locator.first.evaluate = AsyncMock(return_value=True)
+    click_locator.first.click = AsyncMock()
+
+    def locator_side_effect(selector: str):
+        if selector.startswith("xpath="):
+            return click_locator
+        return invisible_locator
+
+    page.locator = MagicMock(side_effect=locator_side_effect)
+
+    mock_send = MagicMock(return_value=True)
+
+    with (
+        patch("worker.crawl.readiness.get_popup_selectors_in_order", return_value=["[data-testid='nope']"]),
+        patch(
+            "worker.crawl.readiness.get_config",
+            return_value=MagicMock(telegram_bot_token="bot", telegram_chat_id="chat"),
+        ),
+        patch("shared.telegram.send_telegram_json", new=mock_send),
+        patch("worker.crawl.readiness.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        events = await dismiss_popups(page)
+
+    assert sum(1 for e in events if e.get("result") == "success") == 1
+    assert mock_send.call_count == 0
 
 
 @pytest.mark.asyncio

@@ -11,9 +11,9 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 0) Crawl policy version
 
-- **crawl_policy_version**: `v1.26` (Session-level Excel rubric artifact export; deterministic settle delays after popup/overlay; extraction retry on transient Playwright errors; additional deterministic wait before first popup pass to catch late-appearing overlays; see §5 and §4).
+- **crawl_policy_version**: `v1.48` (Session-level Excel rubric artifact export; deterministic settle delays after popup/overlay; extraction retry on transient Playwright errors; additional deterministic wait before first popup pass to catch late-appearing overlays; improved popup close handling for icon-only controls; plus HTML-scanned fallback discovery without Telegram popup close discovery scoring payloads; plus PDP candidate discovery HTTP-crawl mode toggle; secondary-popup close attempt after first dismiss; longer popup pre-pass wait to capture late-rendered modals; PDP candidate navigation validation to ensure we try the next candidate when the first isn't a real product; and in `PDP_DISCOVERY_MODE=new` require add-to-cart signal before selecting PDP; plus cart-before-checkout popup dismissal retry; plus live Telegram progress logs for PDP discovery candidates and selection; and HTTP discovery pre-validates candidate product HTML before returning URLs; plus stealth init script fingerprint reduction via `navigator.webdriver` override (fixed async init injection); plus PDP validity fallback: accept price + (add-to-cart OR product schema) even when title+image detection fails; see §5 and §4).
 - **v1.1**: PDP-not-found with homepage success → session status partial; Redis lock/throttle; retention cleanup.
-- **v1.2**: PDP validation requires price + title+image.
+- **v1.2**: PDP validation uses base signals (price + title+image).
 - **v1.3**: Navigation retry policy: attempts, backoff, timeouts, retryable classes, and bot-block detection with single mitigation retry (§5).
 - **v1.4**: Retryable classes include HTTP 429 (rate-limit); logging reason `status_429`.
 - **v1.5**: Artifact paths include a readable domain suffix for storage layout (§4).
@@ -22,7 +22,7 @@ This document is the authoritative, merged specification. It includes all conten
 - **v1.8**: Pre-consent vendors expanded beyond OneTrust/Shopware (best-effort vendor DOM scripts).
 - **v1.9**: Bot-block detection tightened to high-confidence indicators only (reduces false positives).
 - **v1.10**: Bot-block detection tightened to highest-confidence indicators only (reduces false positives further).
-- **v1.11**: PDP validation loosened to base signals only (price + title+image).
+- **v1.11**: PDP validation accepts fallback when strong signals exist (price + (add-to-cart/buy OR product schema)).
 - **v1.12**: HTML is always stored (no conditional gating).
 - **v1.13**: Increased minimum wait after load and added post-scroll settle delay.
 - **v1.14**: Max reliability timings (3s minimum wait, 3s scroll waits, 3s post-scroll settle).
@@ -36,6 +36,24 @@ This document is the authoritative, merged specification. It includes all conten
 - **v1.24**: Deterministic settle delays: after each popup dismiss click (configurable, e.g. 500 ms); after overlay hide fallback (configurable, e.g. 500 ms). Extraction retry policy: retry once (max 2 attempts total) on transient Playwright errors (execution context destroyed, target closed, navigation interrupted); retry flow: short wait_for_page_ready → optional popup pass → overlay fallback → retry extraction; log retries with `event_type=retry`, reason, attempt, page_type, viewport.
 - **v1.25**: Add session-level Excel rubric artifact (`excel_rubric_xlsx`) stored at `{domain}__{session_id}/output.xlsx`. Workbook contains `Questions` (static rubric) and `Output` (per-question grading rows) tabs and is excluded from HTML retention cleanup.
 - **v1.26**: Add a small deterministic wait before the first popup dismissal pass after page ready (to allow late-appearing overlays), keeping total wait bounded and deterministic.
+- **v1.27**: In `CHECKOUT_PROCESSING_MODE=simple`, generate AI audit answers with tier gating: evaluate Tier 1 first, and only evaluate Tier 2/Tier 3 if all Tier 1 questions pass.
+- **v1.28**: In `CHECKOUT_PROCESSING_MODE=simple`, send an estimated AI evaluation cost summary to Telegram after tier-gated answers execution.
+- **v1.29**: In `CHECKOUT_PROCESSING_MODE=simple`, use the smaller answers model (`gpt-5.2-mini`) and write merged `answers.json` artifacts (tier-gated Tier 1→2→3) into the same per-page folders.
+- **v1.32**: In `CHECKOUT_PROCESSING_MODE=simple`, also export the session-level Excel rubric workbook (`excel_rubric_xlsx`) using `answers.json` fallback when needed.
+- **v1.30**: In `CHECKOUT_PROCESSING_MODE=simple`, fall back to alternate answer models if the preferred model is unavailable (model_not_found).
+- **v1.31**: In `CHECKOUT_PROCESSING_MODE=simple`, prefer `gpt-5.4-nano` for tier-gated answers and fall back to `gpt-5.4-mini` only if nano is unavailable.
+- **v1.33**: Popup handling: allow dismiss clicks for “close/dismiss” selectors even when inner text/aria-label is empty, improving popup removal on pages where close icons are SVG-only.
+- **v1.34**: Popup handling: extend modal popup selector coverage to `span[role="button"]` close/dismiss controls with `aria-label`, improving PDP popup dismissal for icon-only close buttons.
+- **v1.35**: Popup handling: if selector-based dismissal finds no visible dismiss controls, scan `page.content()` and discover high-confidence close XPaths, then attempt bounded dismiss clicks.
+- **v1.36**: Popup handling: when the HTML-scanned fallback discovery runs, send the top close candidates (score + reason + xpath) to Telegram.
+- **v1.37**: PDP candidate discovery: add `PDP_DISCOVERY_MODE` env switch (`old` DOM-based extraction default, `new` HTTP-crawl discovery using homepage) while keeping validation/determinism unchanged.
+- **v1.38**: Popup handling: run HTML-scanned close discovery not only when zero dismissals were made, but also after a single successful dismiss to improve two-popup removal in one pass.
+- **v1.39**: Popup handling: increase deterministic pre-pass popup wait to 5 seconds (`POPUP_PRE_PASS_WAIT_MS=5000`) to allow late popup rendering before dismiss attempts.
+- **v1.40**: PDP candidate selection: when scanning homepage product links, navigate and run PDP validation signals per candidate until a real PDP is found (instead of returning the first heuristic match and failing later).
+- **v1.41**: PDP discovery: when `PDP_DISCOVERY_MODE=new`, if candidate #1 passes base PDP signals but lacks add-to-cart, skip it and continue to candidate #2 (and onward) until a candidate with add-to-cart is found.
+- **v1.42**: Cart popup handling: before clicking “Checkout” from the cart page, run `handle_popups_form()` again to clear late modals/drawers that can block checkout.
+- **v1.43**: PDP discovery telemetry: send Telegram updates during candidate evaluation (candidate list, candidate checks with signals, skip on missing add-to-cart, selected/not-found).
+- **v1.44**: PDP discovery (`PDP_DISCOVERY_MODE=new`): validate discovered product URLs by fetching candidate HTML and requiring product signals (for example og:type=product, /cart/add, add-to-cart/schema markers) before accepting them into the candidate list.
 
 ---
 
@@ -123,6 +141,10 @@ This document is the authoritative, merged specification. It includes all conten
 
 ## 3) Product Page Discovery Strategy
 
+- **Mode switch (v1.37)**
+  - `PDP_DISCOVERY_MODE=old` (default): current homepage DOM-based candidate extraction.
+  - `PDP_DISCOVERY_MODE=new`: run an HTTP crawl from the store homepage to discover product URLs, then apply the same internal-site filtering and PDP validation rules.
+
 - **Primary path**
   - From homepage, collect candidate links:
     - URL patterns: /product, /products, /p/, /item
@@ -131,8 +153,10 @@ This document is the authoritative, merged specification. It includes all conten
 
 - **Validation rules (v1.11)**
   - A page is a valid PDP only if:
-    - **Base signals (all required)**: price (currency + numeric or price element), product title + image (h1 or product-title class + at least one img).
-    - **Strong signals (tracked only)**: add-to-cart/buy button OR product schema.org JSON-LD.
+    - **Price (required)**: price (currency + numeric or price element), AND
+    - **Base-or-fallback**:
+      - **Base signals (all required)**: product title + image (h1 or product-title class + at least one img), OR
+      - **Fallback when title/image detection fails**: add-to-cart/buy button OR product schema.org JSON-LD.
 
 - **Fallbacks**
   - If no candidates:

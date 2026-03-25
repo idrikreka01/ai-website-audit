@@ -22,7 +22,7 @@ from typing import Any, Mapping, Optional
 import structlog
 
 
-def _build_shared_processors() -> list[structlog.types.Processor]:
+def _build_shared_processors(log_format: str = "console") -> list[structlog.types.Processor]:
     """
     Processors shared by both API and worker services.
 
@@ -32,20 +32,28 @@ def _build_shared_processors() -> list[structlog.types.Processor]:
 
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
-    return [
+    processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         timestamper,
         structlog.processors.EventRenamer("message"),
         structlog.processors.format_exc_info,
-        structlog.processors.JSONRenderer(),
     ]
+    if log_format == "json":
+        processors.append(structlog.processors.JSONRenderer())
+    else:
+        processors.append(structlog.dev.ConsoleRenderer(colors=False))
+    return processors
 
 
 def configure_logging(
     level: int = logging.INFO,
     log_file: Optional[str] = None,
     log_stdout: bool = True,
+    log_format: str = "console",
+    telegram_bot_token: Optional[str] = None,
+    telegram_chat_id: Optional[str] = None,
+    telegram_log_every_event: bool = False,
 ) -> None:
     """
     Configure structlog and the standard logging module.
@@ -85,12 +93,45 @@ def configure_logging(
         fallback.setFormatter(logging.Formatter("%(message)s"))
         root.addHandler(fallback)
 
+    if telegram_log_every_event and telegram_bot_token and telegram_chat_id:
+        root.addHandler(
+            _TelegramLogHandler(
+                level=level,
+                bot_token=telegram_bot_token,
+                chat_id=telegram_chat_id,
+            )
+        )
+
     structlog.configure(
-        processors=_build_shared_processors(),
+        processors=_build_shared_processors(log_format=log_format),
         wrapper_class=structlog.make_filtering_bound_logger(level),
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
+
+class _TelegramLogHandler(logging.Handler):
+    def __init__(self, *, level: int, bot_token: str, chat_id: str) -> None:
+        super().__init__(level=level)
+        self._bot_token = bot_token
+        self._chat_id = chat_id
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.name.startswith("shared.telegram"):
+            return
+        try:
+            from shared.telegram import send_telegram_message
+
+            message = self.format(record)
+            if len(message) > 3500:
+                message = message[:3500] + "... [truncated]"
+            send_telegram_message(
+                bot_token=self._bot_token,
+                chat_id=self._chat_id,
+                message=message,
+            )
+        except Exception:
+            return
 
 
 def get_logger(name: Optional[str] = None) -> structlog.BoundLogger:

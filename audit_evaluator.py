@@ -1,3 +1,5 @@
+# ABOUTME: Evaluates audit questions with OpenAI Responses API.
+# ABOUTME: Produces structured answer results and optional cost info.
 """
 Production-ready pipeline for evaluating audit questions using OpenAI Responses API.
 
@@ -586,7 +588,8 @@ class AuditEvaluator:
         save_response: bool = True,
         include_screenshots: bool = False,
         repository=None,
-    ) -> Dict[str, Any]:
+        return_cost: bool = False,
+    ) -> Dict[str, Any] | tuple[Dict[str, Any], dict[str, Any]]:
         """
         Run audit evaluation for given questions.
 
@@ -619,8 +622,17 @@ class AuditEvaluator:
         question_items = list(questions.items())
         total_questions = len(question_items)
 
+        cost_totals: dict[str, Any] | None = None
+        if return_cost:
+            cost_totals = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost_usd": 0.0,
+            }
+
         if total_questions <= max_questions_per_batch:
-            return self._run_single_batch(
+            results, cost_data = self._run_single_batch(
                 session_id,
                 page_type,
                 questions,
@@ -632,6 +644,12 @@ class AuditEvaluator:
                 input_per_1m,
                 output_per_1m,
             )
+            if cost_totals is not None and cost_data:
+                cost_totals["input_tokens"] += cost_data.get("input_tokens") or 0
+                cost_totals["output_tokens"] += cost_data.get("output_tokens") or 0
+                cost_totals["total_tokens"] += cost_data.get("total_tokens") or 0
+                cost_totals["estimated_cost_usd"] += cost_data.get("estimated_cost_usd") or 0.0
+            return (results, cost_totals) if return_cost else results
 
         all_results = {}
         num_batches = (total_questions + max_questions_per_batch - 1) // max_questions_per_batch
@@ -641,7 +659,7 @@ class AuditEvaluator:
             end_idx = min(start_idx + max_questions_per_batch, total_questions)
             batch_questions = dict(question_items[start_idx:end_idx])
 
-            batch_results = self._run_single_batch(
+            batch_results, cost_data = self._run_single_batch(
                 session_id,
                 page_type,
                 batch_questions,
@@ -654,6 +672,11 @@ class AuditEvaluator:
                 output_per_1m,
             )
             all_results.update(batch_results)
+            if cost_totals is not None and cost_data:
+                cost_totals["input_tokens"] += cost_data.get("input_tokens") or 0
+                cost_totals["output_tokens"] += cost_data.get("output_tokens") or 0
+                cost_totals["total_tokens"] += cost_data.get("total_tokens") or 0
+                cost_totals["estimated_cost_usd"] += cost_data.get("estimated_cost_usd") or 0.0
 
         if save_response:
             from pathlib import Path
@@ -699,7 +722,7 @@ class AuditEvaluator:
                 except Exception:
                     pass
 
-        return all_results
+        return (all_results, cost_totals) if return_cost else all_results
 
     def _run_single_batch(
         self,
@@ -713,7 +736,7 @@ class AuditEvaluator:
         repository,
         input_per_1m: float,
         output_per_1m: float,
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], dict[str, Any] | None]:
         """Run a single batch of questions."""
         request_payload = self.builder.build_request(
             session_id,
@@ -843,7 +866,7 @@ class AuditEvaluator:
                     except Exception:
                         pass
 
-            return transformed
+            return transformed, cost_data
 
         except Exception as e:
             error_str = str(e).lower()
@@ -993,7 +1016,7 @@ class AuditEvaluator:
                         except Exception:
                             pass
 
-                return transformed
+                return transformed, cost_data
 
             raise RuntimeError(f"OpenAI API error: {e}")
 

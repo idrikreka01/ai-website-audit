@@ -1,5 +1,6 @@
 """
-Unit tests for PDP validation: price + title+image (strong signals tracked only).
+Unit tests for PDP validation: base (price + title+image) with fallback to
+price + (add-to-cart OR product schema) when title/image detection fails.
 
 Covers: price detection (regex + selector fallback), add-to-cart selectors,
 schema.org detection, title+image detection, and the current validation rule.
@@ -118,6 +119,18 @@ def test_is_valid_pdp_page_dict():
             }
         )
         is False
+    )
+    # Valid: price + add-to-cart without title+image (fallback)
+    assert (
+        is_valid_pdp_page(
+            {
+                "has_price": True,
+                "has_add_to_cart": True,
+                "has_product_schema": False,
+                "has_title_and_image": False,
+            }
+        )
+        is True
     )
     # Valid: base + product schema
     assert (
@@ -251,6 +264,25 @@ async def test_extract_signals_add_to_cart_name_attribute():
     html = """
     <!DOCTYPE html><html><body>
     <input type="submit" name="add-to-cart" value="Add" />
+    </body></html>
+    """
+    async with async_playwright() as pw:
+        browser = await pw.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.set_content(html, wait_until="domcontentloaded")
+        signals = await extract_pdp_validation_signals(page)
+        await browser.close()
+    assert signals["has_add_to_cart"] is True
+
+
+@pytest.mark.asyncio
+async def test_extract_signals_add_to_cart_name_add_attribute():
+    """Add-to-cart detected via [name="add"] (common on multilingual Shopify themes)."""
+    from playwright.async_api import async_playwright
+
+    html = """
+    <!DOCTYPE html><html><body>
+    <button name="add" type="submit">Ajouter au panier</button>
     </body></html>
     """
     async with async_playwright() as pw:
@@ -405,13 +437,13 @@ async def test_extract_signals_title_and_image_fails_without_title():
 
 
 def _expected_valid(price: bool, cart: bool, schema: bool, title_img: bool) -> bool:
-    """Valid iff base (price + title+image)."""
-    base = price and title_img
-    return base
+    """Valid iff price and (base OR strong signal)."""
+    strong = cart or schema
+    return price and (title_img or strong)
 
 
 def test_evaluate_pdp_validation_signals_all_combinations():
-    """Test all 16 combinations for base-only rule."""
+    """Test all 16 combinations for base-with-fallback rule."""
     for price in (False, True):
         for cart in (False, True):
             for schema in (False, True):
@@ -494,6 +526,19 @@ def test_is_valid_pdp_page_all_signal_combinations():
             }
         )
         is False
+    )
+
+    # Valid: price + add-to-cart without title+image (fallback)
+    assert (
+        is_valid_pdp_page(
+            {
+                "has_price": True,
+                "has_add_to_cart": True,
+                "has_product_schema": False,
+                "has_title_and_image": False,
+            }
+        )
+        is True
     )
 
     # Valid: base only (no strong signal)

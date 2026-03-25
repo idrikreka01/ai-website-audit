@@ -7,6 +7,7 @@ No behavior change.
 
 from __future__ import annotations
 
+import os
 import time
 from urllib.parse import urlparse
 from uuid import UUID
@@ -15,6 +16,7 @@ from playwright.async_api import async_playwright
 
 from shared.config import get_config
 from shared.logging import bind_request_context, get_logger
+from shared.telegram import send_telegram_message
 from worker.constants import PDP_VIEWPORTS
 from worker.crawl import (
     create_browser_context,
@@ -26,6 +28,22 @@ from worker.crawl import (
 from worker.repository import AuditRepository
 
 logger = get_logger(__name__)
+
+
+def _send_pdp_discovery_telegram(
+    config,
+    message: str,
+) -> None:
+    if not config.telegram_bot_token or not config.telegram_chat_id:
+        return
+    try:
+        send_telegram_message(
+            bot_token=config.telegram_bot_token,
+            chat_id=config.telegram_chat_id,
+            message=message,
+        )
+    except Exception:
+        return
 
 
 def ensure_pdp_page_records(session_id: UUID, repository: AuditRepository) -> None:
@@ -63,9 +81,24 @@ async def run_pdp_discovery_and_validation(
     if not candidate_urls:
         logger.info("pdp_not_found", reason="no_candidates", session_id=str(session_id))
         return None
+    config = get_config()
+    require_add_to_cart = (
+        (os.getenv("PDP_DISCOVERY_MODE") or "old").strip().lower()
+        in {"new", "http", "http_new", "script"}
+    )
+    _send_pdp_discovery_telegram(
+        config,
+        (
+            "🔎 PDP discovery started\n"
+            f"domain: {domain}\n"
+            f"session_id: {session_id}\n"
+            f"mode: {'new' if require_add_to_cart else 'old'}\n"
+            f"candidates: {len(candidate_urls)}\n"
+            f"sample: {candidate_urls[:5]}"
+        ),
+    )
 
     async with async_playwright() as pw:
-        config = get_config()
         browser = await pw.chromium.launch(headless=config.browser_headless)
         context = await create_browser_context(browser, "desktop")
         try:
@@ -120,11 +153,47 @@ async def run_pdp_discovery_and_validation(
                         has_product_schema=signals.get("has_product_schema"),
                         has_title_and_image=signals.get("has_title_and_image"),
                     )
+                    _send_pdp_discovery_telegram(
+                        config,
+                        (
+                            "🔎 PDP candidate checked\n"
+                            f"url: {pdp_url}\n"
+                            f"session_id: {session_id}\n"
+                            f"signals: price={bool(signals.get('has_price'))}, "
+                            f"atc={bool(signals.get('has_add_to_cart'))}, "
+                            f"schema={bool(signals.get('has_product_schema'))}, "
+                            f"title_image={bool(signals.get('has_title_and_image'))}\n"
+                            f"elapsed_ms: {round(elapsed_ms, 2)}"
+                        ),
+                    )
                     if is_valid_pdp_page(signals):
+                        if require_add_to_cart and not bool(signals.get("has_add_to_cart")):
+                            logger.info(
+                                "pdp_candidate_skipped_missing_add_to_cart",
+                                url=pdp_url,
+                                session_id=str(session_id),
+                            )
+                            _send_pdp_discovery_telegram(
+                                config,
+                                (
+                                    "⏭️ PDP candidate skipped (missing add-to-cart)\n"
+                                    f"url: {pdp_url}\n"
+                                    f"session_id: {session_id}"
+                                ),
+                            )
+                            continue
                         logger.info(
                             "pdp_selected",
                             url=pdp_url,
                             session_id=str(session_id),
+                        )
+                        _send_pdp_discovery_telegram(
+                            config,
+                            (
+                                "✅ PDP selected\n"
+                                f"url: {pdp_url}\n"
+                                f"session_id: {session_id}"
+                            ),
                         )
                         return pdp_url
                 except Exception as e:
@@ -142,4 +211,13 @@ async def run_pdp_discovery_and_validation(
             await browser.close()
 
     logger.info("pdp_not_found", reason="no_valid_candidate", session_id=str(session_id))
+    _send_pdp_discovery_telegram(
+        config,
+        (
+            "❌ PDP not found\n"
+            f"domain: {domain}\n"
+            f"session_id: {session_id}\n"
+            "reason: no_valid_candidate"
+        ),
+    )
     return None
