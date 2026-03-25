@@ -337,7 +337,8 @@ def _maybe_start_telegram_long_polling(app: FastAPI) -> None:
         while not stop_event.is_set():
             try:
                 url = f"https://api.telegram.org/bot{config.telegram_bot_token}/getUpdates"
-                params = {"timeout": 30, "offset": offset, "allowed_updates": ["message"]}
+                # Use a short long-poll timeout so Telegram commands respond quickly.
+                params = {"timeout": 5, "offset": offset, "allowed_updates": ["message"]}
                 resp = requests.get(url, params=params, timeout=40)
                 resp.raise_for_status()
                 data = resp.json()
@@ -348,7 +349,7 @@ def _maybe_start_telegram_long_polling(app: FastAPI) -> None:
                     error=str(e),
                     telegram_chat_id=config.telegram_chat_id,
                 )
-                stop_event.wait(5)
+                stop_event.wait(2)
                 continue
 
             for update in data.get("result") or []:
