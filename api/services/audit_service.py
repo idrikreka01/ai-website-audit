@@ -86,6 +86,7 @@ class AuditService:
         *,
         url: str,
         mode: str,
+        telegram_chat_id: str | None = None,
     ) -> CreateAuditResponse:
         """
         Create a new audit session.
@@ -103,6 +104,8 @@ class AuditService:
             "mode": mode,
             "crawl_policy_version": CRAWL_POLICY_VERSION,
         }
+        if telegram_chat_id:
+            config_snapshot["telegram_chat_id"] = telegram_chat_id
 
         # Create session
         session_data = self.repository.create_session(

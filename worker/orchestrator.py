@@ -217,17 +217,25 @@ def compute_overall_audit_score(session_uuid: UUID, repository: AuditRepository)
 
 
 def send_manual_review_notification(
-    session_uuid: UUID, score_data: dict, url: str, reason: Optional[str] = None
+    session_uuid: UUID,
+    score_data: dict,
+    url: str,
+    repository: AuditRepository,
+    reason: Optional[str] = None,
 ) -> None:
     """
     Send Telegram notification for manual review when score < 70% or page coverage < 4.
     """
     config = get_config()
-    if not config.telegram_bot_token or not config.telegram_chat_id:
-        logger.warning(
-            "telegram_not_configured_for_manual_review",
-            session_id=str(session_uuid),
-        )
+    if not config.telegram_bot_token:
+        return
+
+    chat_id = config.telegram_chat_id
+    if not chat_id:
+        session_data = repository.get_session_by_id(session_uuid)
+        chat_id = (session_data or {}).get("config_snapshot", {}).get("telegram_chat_id")
+
+    if not chat_id:
         return
 
     reason_text = reason or "Overall score < 70%"
@@ -253,7 +261,7 @@ Reason: {reason_text}"""
 
     success = send_telegram_message(
         bot_token=config.telegram_bot_token,
-        chat_id=config.telegram_chat_id,
+        chat_id=chat_id,
         message=message,
         parse_mode="HTML",
     )
@@ -1268,6 +1276,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
                 session_uuid,
                 score_data_for_notification,
                 url,
+                repository,
                 reason=f"Page coverage {page_coverage_score}/4 below threshold. Audit stopped.",
             )
         except Exception as e:
@@ -1350,7 +1359,7 @@ def run_audit_session(url: str, session_uuid: UUID, repository: AuditRepository)
 
         if score_data["needs_manual_review"]:
             send_manual_review_notification(
-                session_uuid, score_data, url, reason="Overall score < 70%"
+                session_uuid, score_data, url, repository, reason="Overall score < 70%"
             )
             logger.info(
                 "manual_review_triggered",

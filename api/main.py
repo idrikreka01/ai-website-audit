@@ -181,6 +181,7 @@ def create_app() -> FastAPI:
                 resp = service.create_audit_session(
                     url=normalized,
                     mode="standard",
+                    telegram_chat_id=str(chat_id),
                 )
                 _reply(
                     f"✅ Audit queued\n"
@@ -411,6 +412,7 @@ def _maybe_start_telegram_long_polling(app: FastAPI) -> None:
                             resp2 = service.create_audit_session(
                                 url=normalized,
                                 mode="standard",
+                                telegram_chat_id=str(chat_id),
                             )
                             _reply(
                                 f"✅ Audit queued\n"
