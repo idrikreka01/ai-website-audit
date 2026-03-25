@@ -29,6 +29,7 @@ from worker.locking import (
 from worker.orchestrator import run_audit_session
 from worker.repository import AuditRepository
 from worker.excel_rubric import save_excel_rubric_workbook
+from shared.telegram import send_telegram_message
 
 logger = get_logger(__name__)
 
@@ -127,6 +128,33 @@ def process_audit_job(session_id: str, url: str) -> None:
                     "excel_rubric_artifact_export_failed",
                     session_id=session_id,
                     error=str(e),
+                    error_type=type(e).__name__,
+                )
+            try:
+                session_row = repository.get_session_by_id(session_uuid)
+                chat_id = (
+                    (session_row or {}).get("config_snapshot", {}) or {}
+                ).get("telegram_chat_id")
+                if config.telegram_bot_token and chat_id:
+                    short_id = str(session_uuid)[:8]
+                    message = (
+                        "✅ <b>Audit finished</b>\n\n"
+                        f"Session: <code>{short_id}</code>\n"
+                        f"URL: {url}"
+                        f"\n\nTo get Excel rubric, send:"
+                        f"\n<code>/get {session_uuid}</code>"
+                    )
+                    send_telegram_message(
+                        bot_token=config.telegram_bot_token,
+                        chat_id=str(chat_id),
+                        message=message,
+                        parse_mode="HTML",
+                    )
+            except Exception as e:
+                logger.warning(
+                    "telegram_audit_finished_notification_failed",
+                    error=str(e),
+                    session_id=session_id,
                     error_type=type(e).__name__,
                 )
         except Exception as e:
