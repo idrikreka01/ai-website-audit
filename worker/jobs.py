@@ -92,8 +92,6 @@ def process_audit_job(session_id: str, url: str) -> None:
 
         if config.telegram_bot_token and config.telegram_chat_id:
             try:
-                from shared.telegram import send_telegram_message
-
                 session_short_id = str(session_uuid)[:8]
                 message = f"""🚀 <b>Audit Started</b>
 
